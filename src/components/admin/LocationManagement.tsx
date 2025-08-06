@@ -251,9 +251,9 @@ const LocationManagement: React.FC = () => {
                   {/* Registration URL */}
                   <div className="bg-gray-50 rounded-lg p-4 mb-4">
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium text-gray-700">Registration URL:</label>
+                      <label className="text-sm font-medium text-gray-700">Public Registration URL:</label>
                       <button
-                        onClick={() => copyToClipboard(`${window.location.origin}/register/${location.registrationUrl}`, location.id)}
+                        onClick={() => copyToClipboard(`${window.location.origin}/visit/${location.registrationUrl}`, location.id)}
                         className="flex items-center text-sm text-purple-600 hover:text-purple-700 transition duration-200"
                       >
                         {copiedUrl === location.id ? (
@@ -271,17 +271,22 @@ const LocationManagement: React.FC = () => {
                     </div>
                     <div className="flex items-center space-x-2">
                       <code className="flex-1 text-sm bg-white px-3 py-2 rounded border text-gray-800 font-mono">
-                        {window.location.origin}/register/{location.registrationUrl}
+                        {window.location.origin}/visit/{location.registrationUrl}
                       </code>
                       <a
-                        href={`/register/${location.registrationUrl}`}
+                        href={`/visit/${location.registrationUrl}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition duration-200"
-                        title="Open registration page"
+                        title="Open public registration page"
                       >
                         <ExternalLink className="w-4 h-4" />
                       </a>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-xs text-gray-500">
+                        ✓ No login required - Visitors can register directly
+                      </p>
                     </div>
                   </div>
 

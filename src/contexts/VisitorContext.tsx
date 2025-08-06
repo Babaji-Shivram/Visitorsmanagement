@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiService, type VisitorDto } from '../services/apiService';
+import { useAuth } from './AuthContext';
 
 export interface Visitor {
   id: string;
-  locationId: string;
   locationId: string;
   fullName: string;
   phoneNumber: string;
@@ -26,13 +27,15 @@ export interface Visitor {
 
 interface VisitorContextType {
   visitors: Visitor[];
-  addVisitor: (visitor: Omit<Visitor, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => void;
-  updateVisitorStatus: (id: string, status: Visitor['status'], notes?: string) => void;
+  isLoading: boolean;
+  addVisitor: (visitor: Omit<Visitor, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
+  updateVisitorStatus: (id: string, status: Visitor['status'], notes?: string) => Promise<boolean>;
   getVisitorsByDate: (date: string, locationId?: string) => Visitor[];
   getVisitorById: (id: string) => Visitor | undefined;
-  checkInVisitor: (id: string) => void;
-  checkOutVisitor: (id: string) => void;
+  checkInVisitor: (id: string) => Promise<boolean>;
+  checkOutVisitor: (id: string) => Promise<boolean>;
   getStaffInfo: (staffName: string) => { name: string; phone: string; email: string; extension: string } | undefined;
+  refreshVisitors: () => Promise<void>;
 }
 
 const VisitorContext = createContext<VisitorContextType | undefined>(undefined);
@@ -45,230 +48,160 @@ export const useVisitor = () => {
   return context;
 };
 
-// Mock data for demonstration
-const mockVisitors: Visitor[] = [
-  {
-    id: '1',
-    locationId: '1',
-    fullName: 'John Smith',
-    phoneNumber: '+1234567890',
-    email: 'john.smith@example.com',
-    companyName: 'Tech Solutions Inc.',
-    purposeOfVisit: 'Business Meeting',
-    whomToMeet: 'Dr. Emily Watson',
-    dateTime: new Date().toISOString(),
-    status: 'awaiting_approval',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    locationId: '1',
-    fullName: 'Maria Garcia',
-    phoneNumber: '+1987654321',
-    email: 'maria.garcia@consultancy.com',
-    companyName: 'Strategic Consultancy',
-    purposeOfVisit: 'Consultation',
-    whomToMeet: 'David Rodriguez',
-    dateTime: new Date().toISOString(),
-    status: 'approved',
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    updatedAt: new Date(Date.now() - 1800000).toISOString(),
-    approvedBy: 'David Rodriguez',
-    approvedAt: new Date(Date.now() - 1800000).toISOString(),
-  },
-  {
-    id: '3',
-    locationId: '2',
-    fullName: 'Robert Johnson',
-    phoneNumber: '+1555666777',
-    email: 'robert.j@freelance.com',
-    purposeOfVisit: 'Interview',
-    whomToMeet: 'Lisa Thompson',
-    dateTime: new Date().toISOString(),
-    status: 'checked_in',
-    createdAt: new Date(Date.now() - 7200000).toISOString(),
-    updatedAt: new Date(Date.now() - 1200000).toISOString(),
-    approvedBy: 'Lisa Thompson',
-    approvedAt: new Date(Date.now() - 3600000).toISOString(),
-    checkInTime: new Date(Date.now() - 1200000).toISOString(),
-  },
-  {
-    id: '4',
-    locationId: '1',
-    fullName: 'Sarah Wilson',
-    phoneNumber: '+1444555666',
-    email: 'sarah.wilson@logistics.com',
-    companyName: 'Global Logistics',
-    purposeOfVisit: 'Delivery',
-    whomToMeet: 'Michael Chen',
-    dateTime: new Date(Date.now() - 900000).toISOString(),
-    status: 'approved',
-    createdAt: new Date(Date.now() - 5400000).toISOString(),
-    updatedAt: new Date(Date.now() - 900000).toISOString(),
-    approvedBy: 'Michael Chen',
-    approvedAt: new Date(Date.now() - 900000).toISOString(),
-  },
-  {
-    id: '5',
-    locationId: '1',
-    fullName: 'James Brown',
-    phoneNumber: '+1333444555',
-    email: 'james.brown@maintenance.co',
-    companyName: 'City Maintenance Co.',
-    purposeOfVisit: 'Maintenance',
-    whomToMeet: 'Sarah Johnson',
-    dateTime: new Date(Date.now() - 1800000).toISOString(),
-    status: 'checked_out',
-    createdAt: new Date(Date.now() - 9000000).toISOString(),
-    updatedAt: new Date(Date.now() - 600000).toISOString(),
-    approvedBy: 'Sarah Johnson',
-    approvedAt: new Date(Date.now() - 7200000).toISOString(),
-    checkInTime: new Date(Date.now() - 5400000).toISOString(),
-    checkOutTime: new Date(Date.now() - 600000).toISOString(),
-  },
-  {
-    id: '6',
-    locationId: '2',
-    fullName: 'Emma Davis',
-    phoneNumber: '+1222333444',
-    email: 'emma.davis@training.org',
-    companyName: 'Professional Training Org',
-    purposeOfVisit: 'Training',
-    whomToMeet: 'Dr. Emily Watson',
-    dateTime: new Date(Date.now() + 3600000).toISOString(),
-    status: 'awaiting_approval',
-    createdAt: new Date(Date.now() - 1800000).toISOString(),
-    updatedAt: new Date(Date.now() - 1800000).toISOString(),
-  },
-  {
-    id: '7',
-    locationId: '1',
-    fullName: 'Alex Thompson',
-    phoneNumber: '+1111222333',
-    email: 'alex.thompson@consulting.biz',
-    companyName: 'Business Consulting',
-    purposeOfVisit: 'Business Meeting',
-    whomToMeet: 'David Rodriguez',
-    dateTime: new Date().toISOString(),
-    status: 'rejected',
-    createdAt: new Date(Date.now() - 2700000).toISOString(),
-    updatedAt: new Date(Date.now() - 1200000).toISOString(),
-    notes: 'Visitor did not have proper identification',
-  },
-  {
-    id: '8',
-    locationId: '1',
-    fullName: 'Lisa Martinez',
-    phoneNumber: '+1999888777',
-    email: 'lisa.martinez@vendor.com',
-    companyName: 'Office Supplies Vendor',
-    purposeOfVisit: 'Business Meeting',
-    whomToMeet: 'Lisa Thompson',
-    dateTime: new Date(Date.now() - 600000).toISOString(),
-    status: 'checked_in',
-    createdAt: new Date(Date.now() - 4500000).toISOString(),
-    updatedAt: new Date(Date.now() - 300000).toISOString(),
-    approvedBy: 'Lisa Thompson',
-    approvedAt: new Date(Date.now() - 1800000).toISOString(),
-    checkInTime: new Date(Date.now() - 300000).toISOString(),
-  },
-  {
-    id: '9',
-    locationId: '2',
-    fullName: 'Kevin Lee',
-    phoneNumber: '+1777666555',
-    email: 'kevin.lee@freelancer.net',
-    purposeOfVisit: 'Interview',
-    whomToMeet: 'Michael Chen',
-    dateTime: new Date(Date.now() - 300000).toISOString(),
-    status: 'approved',
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    updatedAt: new Date(Date.now() - 600000).toISOString(),
-    approvedBy: 'Michael Chen',
-    approvedAt: new Date(Date.now() - 600000).toISOString(),
-  },
-  {
-    id: '10',
-    locationId: '1',
-    fullName: 'Rachel Green',
-    phoneNumber: '+1666555444',
-    email: 'rachel.green@agency.com',
-    companyName: 'Marketing Agency',
-    purposeOfVisit: 'Consultation',
-    whomToMeet: 'Sarah Johnson',
-    dateTime: new Date(Date.now() + 1800000).toISOString(),
-    status: 'awaiting_approval',
-    createdAt: new Date(Date.now() - 900000).toISOString(),
-    updatedAt: new Date(Date.now() - 900000).toISOString(),
-  },
-];
+// Convert numeric status from API to string status for frontend
+const convertStatusFromApi = (status: number | string): Visitor['status'] => {
+  if (typeof status === 'string') return status as Visitor['status'];
+  
+  switch (status) {
+    case 1: return 'awaiting_approval';
+    case 2: return 'approved';
+    case 3: return 'rejected';
+    case 4: return 'checked_in';
+    case 5: return 'checked_out';
+    case 6: return 'rescheduled';
+    default: return 'awaiting_approval';
+  }
+};
+
+// Convert API VisitorDto to local Visitor interface
+const convertApiVisitorToLocal = (apiVisitor: VisitorDto): Visitor => ({
+  id: apiVisitor.id.toString(),
+  locationId: apiVisitor.locationId.toString(),
+  fullName: apiVisitor.fullName,
+  phoneNumber: apiVisitor.phoneNumber,
+  email: apiVisitor.email,
+  companyName: apiVisitor.companyName,
+  purposeOfVisit: apiVisitor.purposeOfVisit,
+  whomToMeet: apiVisitor.whomToMeet,
+  dateTime: apiVisitor.dateTime,
+  idProofType: apiVisitor.idProofType,
+  idProofNumber: apiVisitor.idProofNumber,
+  photoUrl: apiVisitor.photoUrl,
+  status: convertStatusFromApi(apiVisitor.status as any), // Handle both number and string from API
+  createdAt: apiVisitor.createdAt,
+  updatedAt: apiVisitor.updatedAt,
+  approvedBy: apiVisitor.approvedBy,
+  approvedAt: apiVisitor.approvedAt,
+  checkInTime: apiVisitor.checkInTime,
+  checkOutTime: apiVisitor.checkOutTime,
+  notes: apiVisitor.notes,
+});
 
 export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [visitors, setVisitors] = useState<Visitor[]>(mockVisitors);
+  const [visitors, setVisitors] = useState<Visitor[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const { user } = useAuth();
 
-  // Auto-refresh simulation
+  // Load visitors from API when user is authenticated
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Simulate real-time updates
-      setVisitors(prev => [...prev]);
-    }, 30000); // Refresh every 30 seconds
+    if (user) {
+      refreshVisitors();
+    }
+  }, [user]);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  const addVisitor = (visitorData: Omit<Visitor, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => {
-    const newVisitor: Visitor = {
-      ...visitorData,
-      id: Date.now().toString(),
-      status: 'awaiting_approval',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setVisitors(prev => [newVisitor, ...prev]);
+  const refreshVisitors = async () => {
+    if (!user) return;
     
-    // Simulate Teams notification
-    console.log('Teams notification sent to:', visitorData.whomToMeet);
+    setIsLoading(true);
+    try {
+      let apiVisitors: VisitorDto[] = [];
+      
+      // Admin can see all visitors from all locations
+      if (user.role === 'admin') {
+        apiVisitors = await apiService.getVisitors();
+      } 
+      // Reception and staff can only see visitors from their assigned location
+      else if ((user.role === 'reception' || user.role === 'staff') && user.locationId) {
+        apiVisitors = await apiService.getVisitors(user.locationId);
+      }
+      // Fallback: no location assigned or invalid role
+      else {
+        console.warn('User has no location assigned or invalid role for visitor access');
+        apiVisitors = [];
+      }
+      
+      const convertedVisitors = apiVisitors.map(convertApiVisitorToLocal);
+      setVisitors(convertedVisitors);
+    } catch (error) {
+      console.error('Error loading visitors:', error);
+      setVisitors([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateVisitorStatus = (id: string, status: Visitor['status'], notes?: string) => {
-    setVisitors(prev => prev.map(visitor => 
-      visitor.id === id 
-        ? { 
-            ...visitor, 
-            status, 
-            updatedAt: new Date().toISOString(),
-            notes,
-            ...(status === 'approved' && { approvedAt: new Date().toISOString() })
-          }
-        : visitor
-    ));
+  const addVisitor = async (visitorData: Omit<Visitor, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
+    try {
+      const registrationData = {
+        locationId: parseInt(visitorData.locationId),
+        fullName: visitorData.fullName,
+        phoneNumber: visitorData.phoneNumber,
+        email: visitorData.email,
+        companyName: visitorData.companyName,
+        purposeOfVisit: visitorData.purposeOfVisit,
+        whomToMeet: visitorData.whomToMeet,
+        dateTime: visitorData.dateTime,
+        idProofType: visitorData.idProofType,
+        idProofNumber: visitorData.idProofNumber,
+        photoUrl: visitorData.photoUrl,
+      };
+
+      const success = await apiService.registerVisitor(registrationData);
+      if (success) {
+        // Refresh the visitors list to get the latest data
+        await refreshVisitors();
+      }
+      return success;
+    } catch (error) {
+      console.error('Error adding visitor:', error);
+      return false;
+    }
   };
 
-  const checkInVisitor = (id: string) => {
-    setVisitors(prev => prev.map(visitor => 
-      visitor.id === id 
-        ? { 
-            ...visitor, 
-            status: 'checked_in' as const,
-            checkInTime: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        : visitor
-    ));
+  const updateVisitorStatus = async (id: string, status: Visitor['status'], notes?: string): Promise<boolean> => {
+    try {
+      console.log(`🔄 VisitorContext: Starting status update for visitor ${id} to ${status}`);
+      const success = await apiService.updateVisitorStatus(parseInt(id), status, notes);
+      console.log(`📡 VisitorContext: API response for visitor ${id}:`, success);
+      
+      if (success) {
+        console.log(`🔄 VisitorContext: Refreshing visitors after successful status update`);
+        await refreshVisitors();
+        console.log(`✅ VisitorContext: Visitor list refreshed`);
+      } else {
+        console.error(`❌ VisitorContext: Failed to update visitor ${id} status to ${status}`);
+      }
+      return success;
+    } catch (error) {
+      console.error('❌ VisitorContext: Error updating visitor status:', error);
+      return false;
+    }
   };
 
-  const checkOutVisitor = (id: string) => {
-    setVisitors(prev => prev.map(visitor => 
-      visitor.id === id 
-        ? { 
-            ...visitor, 
-            status: 'checked_out' as const,
-            checkOutTime: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        : visitor
-    ));
+  const checkInVisitor = async (id: string): Promise<boolean> => {
+    try {
+      const success = await apiService.checkInVisitor(parseInt(id));
+      if (success) {
+        await refreshVisitors();
+      }
+      return success;
+    } catch (error) {
+      console.error('Error checking in visitor:', error);
+      return false;
+    }
+  };
+
+  const checkOutVisitor = async (id: string): Promise<boolean> => {
+    try {
+      const success = await apiService.checkOutVisitor(parseInt(id));
+      if (success) {
+        await refreshVisitors();
+      }
+      return success;
+    } catch (error) {
+      console.error('Error checking out visitor:', error);
+      return false;
+    }
   };
 
   const getVisitorsByDate = (date: string, locationId?: string) => {
@@ -300,6 +233,7 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
   return (
     <VisitorContext.Provider value={{
       visitors,
+      isLoading,
       addVisitor,
       updateVisitorStatus,
       getVisitorsByDate,
@@ -307,7 +241,7 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
       checkInVisitor,
       checkOutVisitor,
       getStaffInfo,
-      getStaffInfo,
+      refreshVisitors,
     }}>
       {children}
     </VisitorContext.Provider>

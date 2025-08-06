@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useVisitor } from '../../contexts/VisitorContext';
 import { useLocation } from '../../contexts/LocationContext';
+import { useStaff } from '../../contexts/StaffContext';
 import LocationManagement from './LocationManagement';
 import StaffManagement from './StaffManagement';
 import { 
@@ -14,15 +15,80 @@ import {
   Activity,
   MapPin,
   Eye,
-  Filter
+  Filter,
+  Check,
+  X,
+  RefreshCw,
+  User,
+  Phone,
+  Building,
+  Clock,
+  Edit
 } from 'lucide-react';
 
+// Helper function to convert visitor status enum to display text
+const getStatusText = (status: number | string): string => {
+  if (typeof status === 'string') {
+    switch (status) {
+      case 'awaiting_approval': return 'Awaiting Approval';
+      case 'approved': return 'Approved';
+      case 'rejected': return 'Rejected';
+      case 'checked_in': return 'Checked In';
+      case 'checked_out': return 'Checked Out';
+      case 'rescheduled': return 'Rescheduled';
+      default: return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+    }
+  }
+  
+  // Handle enum values (fallback)
+  switch (status) {
+    case 1: return 'Awaiting Approval';
+    case 2: return 'Approved';
+    case 3: return 'Rejected';
+    case 4: return 'Checked In';
+    case 5: return 'Checked Out';
+    case 6: return 'Rescheduled';
+    default: return 'Unknown';
+  }
+};
+
 const AdminDashboard: React.FC = () => {
-  const { visitors } = useVisitor();
+  const { visitors, updateVisitorStatus } = useVisitor();
   const { locations } = useLocation();
-  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'locations' | 'staff'>('live');
+  const { getActiveStaffMembers } = useStaff();
+  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'approvals' | 'locations' | 'staff'>('live');
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
-  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  const [refreshInterval, setRefreshInterval] = useState<number | null>(null);
+  const [actioningVisitor, setActioningVisitor] = useState<string | null>(null);
+  const [rescheduleModal, setRescheduleModal] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    currentDate: string;
+    newDate: string;
+    newTime: string;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    currentDate: '',
+    newDate: '',
+    newTime: ''
+  });
+  
+  const [editVisitorModal, setEditVisitorModal] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    currentWhomToMeet: string;
+    newWhomToMeet: string;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    currentWhomToMeet: '',
+    newWhomToMeet: ''
+  });
   const [dateRange, setDateRange] = useState({
     from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days ago
     to: new Date().toISOString().split('T')[0]
@@ -90,6 +156,177 @@ const AdminDashboard: React.FC = () => {
 
   const analytics = getAnalytics();
   const liveVisitors = getLiveVisitors();
+
+  // Helper function to check if visitor date is today or future
+  const isVisitTodayOrFuture = (visitorDateTime: string) => {
+    const visitDate = new Date(visitorDateTime);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    visitDate.setHours(0, 0, 0, 0);
+    return visitDate >= today;
+  };
+
+  // Helper function to determine available actions for a visitor
+  const getAvailableActions = (visitor: any) => {
+    const isTodayOrFuture = isVisitTodayOrFuture(visitor.dateTime);
+    
+    switch (visitor.status) {
+      case 'awaiting_approval':
+        return {
+          canApprove: isTodayOrFuture,
+          canReject: true,
+          canReschedule: true,
+          canEdit: true
+        };
+      case 'approved':
+        return {
+          canApprove: false,
+          canReject: true,
+          canReschedule: true,
+          canEdit: true
+        };
+      case 'rejected':
+        return {
+          canApprove: isTodayOrFuture,
+          canReject: false,
+          canReschedule: true,
+          canEdit: true
+        };
+      case 'rescheduled':
+        return {
+          canApprove: isTodayOrFuture,
+          canReject: true,
+          canReschedule: true,
+          canEdit: true
+        };
+      default:
+        return {
+          canApprove: false,
+          canReject: false,
+          canReschedule: false,
+          canEdit: false
+        };
+    }
+  };
+
+  // Get visitors that need action - not just awaiting approval
+  const getPendingApprovals = () => {
+    return visitors.filter(v => {
+      const matchesLocation = selectedLocationId === 'all' || v.locationId === selectedLocationId;
+      // Include visitors that need some form of action
+      const needsAction = ['awaiting_approval', 'approved', 'rejected', 'rescheduled'].includes(v.status);
+      return needsAction && matchesLocation;
+    });
+  };
+
+  const pendingApprovals = getPendingApprovals();
+
+  // Handle approval actions
+  const handleApprovalAction = async (visitorId: string, action: 'approved' | 'rejected' | 'rescheduled') => {
+    setActioningVisitor(visitorId);
+    
+    // Simulate processing delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    await updateVisitorStatus(visitorId, action);
+    setActioningVisitor(null);
+  };
+
+  // Handle reschedule modal
+  const openRescheduleModal = (visitor: any) => {
+    const currentDateTime = new Date(visitor.dateTime);
+    setRescheduleModal({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      currentDate: visitor.dateTime,
+      newDate: currentDateTime.toISOString().split('T')[0],
+      newTime: currentDateTime.toTimeString().slice(0, 5)
+    });
+  };
+
+  const closeRescheduleModal = () => {
+    setRescheduleModal({
+      isOpen: false,
+      visitorId: null,
+      visitorName: '',
+      currentDate: '',
+      newDate: '',
+      newTime: ''
+    });
+  };
+
+  // Handle edit visitor modal
+  const openEditVisitorModal = (visitor: any) => {
+    setEditVisitorModal({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      currentWhomToMeet: visitor.whomToMeet,
+      newWhomToMeet: visitor.whomToMeet
+    });
+  };
+
+  const closeEditVisitorModal = () => {
+    setEditVisitorModal({
+      isOpen: false,
+      visitorId: null,
+      visitorName: '',
+      currentWhomToMeet: '',
+      newWhomToMeet: ''
+    });
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleModal.visitorId || !rescheduleModal.newDate || !rescheduleModal.newTime) {
+      return;
+    }
+
+    setActioningVisitor(rescheduleModal.visitorId);
+    
+    try {
+      // Combine date and time (would be used in real API call)
+      // const newDateTime = new Date(`${rescheduleModal.newDate}T${rescheduleModal.newTime}`);
+      
+      // Here you would typically call an API to update the visitor's date/time
+      // For now, we'll just update the status to rescheduled
+      await updateVisitorStatus(rescheduleModal.visitorId, 'rescheduled');
+      
+      closeRescheduleModal();
+    } catch (error) {
+      console.error('Error rescheduling visitor:', error);
+    } finally {
+      setActioningVisitor(null);
+    }
+  };
+
+  // Handle updating visitor assignment
+  const handleUpdateVisitorAssignment = async () => {
+    if (!editVisitorModal.visitorId || !editVisitorModal.newWhomToMeet) {
+      return;
+    }
+
+    setActioningVisitor(editVisitorModal.visitorId);
+    
+    try {
+      // Here you would typically call an API to update the visitor's whomToMeet field
+      // For now, we'll simulate this by updating the local data
+      console.log(`Updating visitor ${editVisitorModal.visitorId} whomToMeet from "${editVisitorModal.currentWhomToMeet}" to "${editVisitorModal.newWhomToMeet}"`);
+      
+      // In a real app, you'd call something like:
+      // await updateVisitorAssignment(editVisitorModal.visitorId, editVisitorModal.newWhomToMeet);
+      
+      closeEditVisitorModal();
+      
+      // Show success message
+      alert(`Visitor assignment updated successfully!\nOld: ${editVisitorModal.currentWhomToMeet}\nNew: ${editVisitorModal.newWhomToMeet}`);
+      
+    } catch (error) {
+      console.error('Error updating visitor assignment:', error);
+    } finally {
+      setActioningVisitor(null);
+    }
+  };
 
   const getLiveStats = () => {
     return {
@@ -220,6 +457,17 @@ const AdminDashboard: React.FC = () => {
               Analytics
             </button>
             <button
+              onClick={() => setActiveTab('approvals')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 ${
+                activeTab === 'approvals'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Check className="inline w-4 h-4 mr-2" />
+              Approvals ({pendingApprovals.length})
+            </button>
+            <button
               onClick={() => setActiveTab('locations')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 ${
                 activeTab === 'locations'
@@ -297,6 +545,162 @@ const AdminDashboard: React.FC = () => {
         <LocationManagement />
       ) : activeTab === 'staff' ? (
         <StaffManagement />
+      ) : activeTab === 'approvals' ? (
+        <>
+          {/* Approvals Section */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Visitor Management</h2>
+                  <p className="text-gray-600 mt-1">Review and manage visitor requests</p>
+                </div>
+                <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
+                  {pendingApprovals.length} Requiring Action
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {pendingApprovals.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-12 h-12 text-green-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">All Caught Up!</h3>
+                  <p className="text-gray-500">No visitors requiring action at the moment.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {pendingApprovals.map((visitor) => (
+                    <div key={visitor.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition duration-200">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-4 mb-4">
+                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                              <User className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <h3 className="text-lg font-semibold text-gray-900">{visitor.fullName}</h3>
+                              <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                <div className="flex items-center">
+                                  <Phone className="w-4 h-4 mr-1" />
+                                  {visitor.phoneNumber}
+                                </div>
+                                {visitor.companyName && (
+                                  <div className="flex items-center">
+                                    <Building className="w-4 h-4 mr-1" />
+                                    {visitor.companyName}
+                                  </div>
+                                )}
+                                <div className="flex items-center">
+                                  <Calendar className="w-4 h-4 mr-1" />
+                                  {new Date(visitor.dateTime).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <span className="text-sm font-medium text-gray-700">Meeting With:</span>
+                                <p className="text-sm text-gray-900 mt-1">{visitor.whomToMeet}</p>
+                              </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-700">Purpose:</span>
+                                <p className="text-sm text-gray-900 mt-1">{visitor.purposeOfVisit}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex space-x-3">
+                            {(() => {
+                              const actions = getAvailableActions(visitor);
+                              
+                              return (
+                                <>
+                                  {/* Show current status if approved */}
+                                  {visitor.status === 'approved' && (
+                                    <div className="flex items-center mb-3">
+                                      <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 border border-green-200 rounded-full text-sm font-medium">
+                                        <Check className="w-4 h-4 mr-1" />
+                                        Approved
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Show past date warning */}
+                                  {!isVisitTodayOrFuture(visitor.dateTime) && visitor.status === 'awaiting_approval' && (
+                                    <div className="flex items-center mb-3">
+                                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                        Past date - limited actions available
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  <div className="flex space-x-3">
+                                    {actions.canApprove && (
+                                      <button
+                                        onClick={() => handleApprovalAction(visitor.id, 'approved')}
+                                        disabled={actioningVisitor === visitor.id}
+                                        className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                      >
+                                        {actioningVisitor === visitor.id ? (
+                                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                        ) : (
+                                          <Check className="w-4 h-4 mr-2" />
+                                        )}
+                                        Approve
+                                      </button>
+                                    )}
+                                    
+                                    {actions.canReject && (
+                                      <button
+                                        onClick={() => handleApprovalAction(visitor.id, 'rejected')}
+                                        disabled={actioningVisitor === visitor.id}
+                                        className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                      >
+                                        <X className="w-4 h-4 mr-2" />
+                                        Reject
+                                      </button>
+                                    )}
+                                    
+                                    {actions.canReschedule && (
+                                      <button
+                                        onClick={() => openRescheduleModal(visitor)}
+                                        disabled={actioningVisitor === visitor.id}
+                                        className="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                      >
+                                        <Clock className="w-4 h-4 mr-2" />
+                                        Reschedule
+                                      </button>
+                                    )}
+                                    
+                                    {actions.canEdit && (
+                                      <button
+                                        onClick={() => openEditVisitorModal(visitor)}
+                                        disabled={actioningVisitor === visitor.id}
+                                        className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                      >
+                                        <Edit className="w-4 h-4 mr-2" />
+                                        Edit Assignment
+                                      </button>
+                                    )}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       ) : activeTab === 'live' ? (
         <>
           {/* Live Stats */}
@@ -669,7 +1073,7 @@ const AdminDashboard: React.FC = () => {
                       visitor.status === 'checked_out' ? 'bg-gray-100 text-gray-800' :
                       'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {visitor.status.replace('_', ' ')}
+                      {getStatusText(visitor.status)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -682,6 +1086,158 @@ const AdminDashboard: React.FC = () => {
         </div>
           </div>
         </>
+      )}
+
+      {/* Reschedule Modal */}
+      {rescheduleModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Reschedule Visitor
+            </h3>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Visitor:</strong> {rescheduleModal.visitorName}
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                <strong>Current Date/Time:</strong> {new Date(rescheduleModal.currentDate).toLocaleString()}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Date
+                </label>
+                <input
+                  type="date"
+                  value={rescheduleModal.newDate}
+                  onChange={(e) => setRescheduleModal(prev => ({
+                    ...prev,
+                    newDate: e.target.value
+                  }))}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Time
+                </label>
+                <input
+                  type="time"
+                  value={rescheduleModal.newTime}
+                  onChange={(e) => setRescheduleModal(prev => ({
+                    ...prev,
+                    newTime: e.target.value
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={closeRescheduleModal}
+                className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 font-medium rounded-md transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReschedule}
+                disabled={!rescheduleModal.newDate || !rescheduleModal.newTime || actioningVisitor === rescheduleModal.visitorId}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-md transition duration-200"
+              >
+                {actioningVisitor === rescheduleModal.visitorId ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2 inline-block"></div>
+                    Rescheduling...
+                  </>
+                ) : (
+                  'Reschedule'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Visitor Assignment Modal */}
+      {editVisitorModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Edit Visitor Assignment
+            </h3>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Visitor:</strong> {editVisitorModal.visitorName}
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                <strong>Current Assignment:</strong> {editVisitorModal.currentWhomToMeet}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assign to Staff Member
+                </label>
+                <select
+                  value={editVisitorModal.newWhomToMeet}
+                  onChange={(e) => setEditVisitorModal(prev => ({
+                    ...prev,
+                    newWhomToMeet: e.target.value
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select staff member</option>
+                  {getActiveStaffMembers().map(staff => (
+                    <option key={staff.id} value={`${staff.firstName} ${staff.lastName}`}>
+                      {staff.firstName} {staff.lastName} - {staff.designation || 'Staff'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {editVisitorModal.newWhomToMeet && editVisitorModal.newWhomToMeet !== editVisitorModal.currentWhomToMeet && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                  <p className="text-sm text-yellow-800">
+                    <strong>⚠️ Assignment Change:</strong><br />
+                    From: <span className="font-medium">{editVisitorModal.currentWhomToMeet}</span><br />
+                    To: <span className="font-medium">{editVisitorModal.newWhomToMeet}</span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={closeEditVisitorModal}
+                className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 font-medium rounded-md transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateVisitorAssignment}
+                disabled={!editVisitorModal.newWhomToMeet || editVisitorModal.newWhomToMeet === editVisitorModal.currentWhomToMeet || actioningVisitor === editVisitorModal.visitorId}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-md transition duration-200"
+              >
+                {actioningVisitor === editVisitorModal.visitorId ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2 inline-block"></div>
+                    Updating...
+                  </>
+                ) : (
+                  'Update Assignment'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

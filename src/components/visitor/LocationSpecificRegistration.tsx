@@ -4,7 +4,7 @@ import { useVisitor } from '../../contexts/VisitorContext';
 import { useLocation } from '../../contexts/LocationContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useStaff } from '../../contexts/StaffContext';
-import { UserPlus, Phone, Mail, Building, MessageSquare, Calendar, CreditCard, Camera, Check, MapPin, X } from 'lucide-react';
+import { UserPlus, Phone, Mail, Building, MessageSquare, Calendar, CreditCard, Camera, Check, MapPin, X, Upload } from 'lucide-react';
 
 const LocationSpecificRegistration: React.FC = () => {
   const { locationUrl } = useParams<{ locationUrl: string }>();
@@ -15,11 +15,23 @@ const LocationSpecificRegistration: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const location = locationUrl ? getLocationByUrl(locationUrl) : null;
+
+  // Detect mobile device
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Get staff members for this location, fallback to all active staff if none found
   const locationStaff = location ? getStaffMembersByLocation(location.id) : [];
@@ -68,13 +80,26 @@ const LocationSpecificRegistration: React.FC = () => {
 
   const startCamera = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      // Enhanced camera constraints for mobile devices
+      const constraints = {
         video: { 
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          facingMode: 'user'
-        } 
-      });
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          facingMode: 'user', // Front camera for selfies
+          aspectRatio: { ideal: 16/9 }
+        }
+      };
+
+      // Try to get high-quality camera first, fallback to basic if needed
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (error) {
+        // Fallback to basic constraints if high-quality fails
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' }
+        });
+      }
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -83,7 +108,14 @@ const LocationSpecificRegistration: React.FC = () => {
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
-      alert('Unable to access camera. Please check permissions.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (errorMessage.includes('NotAllowedError') || errorMessage.includes('Permission denied')) {
+        alert('Camera access denied. Please allow camera permissions and try again.');
+      } else if (errorMessage.includes('NotFoundError')) {
+        alert('No camera found. Please ensure your device has a camera.');
+      } else {
+        alert('Unable to access camera. Please check that no other app is using the camera and try again.');
+      }
     }
   }, []);
 
@@ -100,15 +132,28 @@ const LocationSpecificRegistration: React.FC = () => {
       const canvas = canvasRef.current;
       const video = videoRef.current;
       
+      // Use the actual video dimensions for better quality
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
       const ctx = canvas.getContext('2d');
       if (ctx) {
+        // Apply any image enhancements
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        // Draw the current video frame
         ctx.drawImage(video, 0, 0);
-        const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        
+        // Convert to JPEG with good quality (0.9 = 90% quality)
+        const photoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
         setCapturedPhoto(photoDataUrl);
         stopCamera();
+        
+        // Provide haptic feedback on mobile devices
+        if ('vibrate' in navigator) {
+          navigator.vibrate(50);
+        }
       }
     }
   }, [stopCamera]);
@@ -118,13 +163,66 @@ const LocationSpecificRegistration: React.FC = () => {
     startCamera();
   };
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file (PNG, JPG, JPEG)');
+        return;
+      }
+
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File size must be less than 5MB');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setCapturedPhoto(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Handle orientation changes on mobile
+  React.useEffect(() => {
+    const handleOrientationChange = () => {
+      if (showCamera && videoRef.current) {
+        // Small delay to ensure the orientation change is complete
+        setTimeout(() => {
+          if (videoRef.current) {
+            // Force video refresh
+            const stream = videoRef.current.srcObject as MediaStream;
+            if (stream) {
+              videoRef.current.srcObject = null;
+              videoRef.current.srcObject = stream;
+            }
+          }
+        }, 100);
+      }
+    };
+
+    window.addEventListener('orientationchange', handleOrientationChange);
+    return () => window.removeEventListener('orientationchange', handleOrientationChange);
+  }, [showCamera]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Create local time instead of UTC
+    const now = new Date();
+    const localISOTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString();
     
     const visitorData = {
       ...formData,
       locationId: location.id,
-      dateTime: new Date().toISOString(),
+      dateTime: localISOTime,
       photoUrl: capturedPhoto || '',
     };
 
@@ -212,16 +310,41 @@ const LocationSpecificRegistration: React.FC = () => {
             </label>
             
             {!capturedPhoto && !showCamera && (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition duration-200">
-                <Camera className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <button
-                  type="button"
-                  onClick={startCamera}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200"
-                >
-                  Take Photo
-                </button>
-                <p className="text-xs text-gray-500 mt-2">Click to open camera and capture your photo</p>
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                  {/* Camera Button */}
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                    className="flex flex-col items-center justify-center w-40 h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition duration-200 bg-gray-50 hover:bg-gray-100"
+                  >
+                    <Camera className="w-8 h-8 text-gray-400 mb-2" />
+                    <span className="text-sm text-gray-600 font-medium">Take Photo</span>
+                    <span className="text-xs text-gray-500 text-center">Use camera</span>
+                  </button>
+                  
+                  {/* Upload Button */}
+                  <button
+                    type="button"
+                    onClick={triggerFileUpload}
+                    className="flex flex-col items-center justify-center w-40 h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition duration-200 bg-gray-50 hover:bg-gray-100"
+                  >
+                    <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                    <span className="text-sm text-gray-600 font-medium">Upload Photo</span>
+                    <span className="text-xs text-gray-500 text-center">From device</span>
+                  </button>
+                </div>
+                
+                <p className="text-xs text-gray-500 text-center">PNG, JPG up to 5MB</p>
+                
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
               </div>
             )}
 
@@ -232,27 +355,41 @@ const LocationSpecificRegistration: React.FC = () => {
                     ref={videoRef}
                     autoPlay
                     playsInline
-                    className="w-full h-64 object-cover"
+                    muted
+                    className="w-full h-64 sm:h-80 object-cover"
                   />
                   <canvas ref={canvasRef} className="hidden" />
+                  
+                  {/* Camera overlay for better mobile experience */}
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute inset-4 border-2 border-white/30 rounded-lg"></div>
+                    <div className="absolute top-4 left-4 right-4">
+                      <p className="text-white text-sm text-center bg-black/50 rounded px-2 py-1">
+                        Position your face within the frame
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex space-x-3 justify-center">
                   <button
                     type="button"
                     onClick={capturePhoto}
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition duration-200 flex items-center"
+                    className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-full transition duration-200 flex items-center text-lg font-medium shadow-lg"
                   >
-                    <Camera className="w-4 h-4 mr-2" />
-                    Capture
+                    <Camera className="w-5 h-5 mr-2" />
+                    Capture Photo
                   </button>
                   <button
                     type="button"
                     onClick={stopCamera}
-                    className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition duration-200"
+                    className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-full transition duration-200"
                   >
                     Cancel
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 text-center">
+                  Make sure you're in a well-lit area for the best photo quality
+                </p>
               </div>
             )}
 
@@ -262,19 +399,25 @@ const LocationSpecificRegistration: React.FC = () => {
                   <img
                     src={capturedPhoto}
                     alt="Captured visitor photo"
-                    className="w-full h-64 object-cover rounded-lg border-2 border-green-200"
+                    className="w-full h-64 sm:h-80 object-cover rounded-lg border-2 border-green-200 shadow-lg"
                   />
+                  <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
+                    ✓ Photo captured
+                  </div>
                 </div>
                 <div className="flex space-x-3 justify-center">
                   <button
                     type="button"
                     onClick={retakePhoto}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition duration-200 flex items-center"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition duration-200 flex items-center"
                   >
                     <Camera className="w-4 h-4 mr-2" />
                     Retake Photo
                   </button>
                 </div>
+                <p className="text-xs text-green-600 text-center">
+                  Photo looks good! You can retake it if needed.
+                </p>
               </div>
             )}
           </div>
@@ -307,7 +450,7 @@ const LocationSpecificRegistration: React.FC = () => {
                 value={formData.phoneNumber}
                 onChange={handleChange}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="+1 (555) 123-4567"
+                placeholder="+91 98765 43210"
                 required
               />
             </div>
@@ -388,6 +531,7 @@ const LocationSpecificRegistration: React.FC = () => {
           </div>
 
           {/* ID Proof Information */}
+          {settings.enabledFields.idProof && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -401,10 +545,9 @@ const LocationSpecificRegistration: React.FC = () => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               >
                 <option value="">Select ID type</option>
-                <option value="Driver's License">Driver's License</option>
-                <option value="Passport">Passport</option>
-                <option value="National ID">National ID</option>
-                <option value="Employee ID">Employee ID</option>
+                {settings.idTypeOptions.map(idType => (
+                  <option key={idType} value={idType}>{idType}</option>
+                ))}
               </select>
             </div>
 
@@ -422,6 +565,7 @@ const LocationSpecificRegistration: React.FC = () => {
               />
             </div>
           </div>
+          )}
 
           {/* Current Date and Time Display */}
           <div className="bg-gray-50 rounded-lg p-4">

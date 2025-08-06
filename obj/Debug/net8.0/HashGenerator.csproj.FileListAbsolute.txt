@@ -1,0 +1,6 @@
+D:\Visitor\obj\Debug\net8.0\HashGenerator.csproj.AssemblyReference.cache
+D:\Visitor\obj\Debug\net8.0\HashGenerator.GeneratedMSBuildEditorConfig.editorconfig
+D:\Visitor\obj\Debug\net8.0\HashGenerator.AssemblyInfoInputs.cache
+D:\Visitor\obj\Debug\net8.0\HashGenerator.AssemblyInfo.cs
+D:\Visitor\obj\Debug\net8.0\HashGenerator.csproj.CoreCompileInputs.cache
+D:\Visitor\obj\Debug\net8.0\HashGenerator.sourcelink.json

@@ -14,11 +14,13 @@ export interface Location {
 
 interface LocationContextType {
   locations: Location[];
-  addLocation: (location: Omit<Location, 'id' | 'registrationUrl' | 'qrCodeUrl' | 'createdAt' | 'updatedAt'>) => void;
-  updateLocation: (id: string, updates: Partial<Location>) => void;
-  deleteLocation: (id: string) => void;
+  addLocation: (location: Omit<Location, 'id' | 'registrationUrl' | 'qrCodeUrl' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateLocation: (id: string, updates: Partial<Location>) => Promise<void>;
+  deleteLocation: (id: string) => Promise<void>;
   getLocationById: (id: string) => Location | undefined;
   getLocationByUrl: (url: string) => Location | undefined;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
@@ -31,77 +33,161 @@ export const useLocation = () => {
   return context;
 };
 
-// Mock locations for demonstration
-const mockLocations: Location[] = [
-  {
-    id: '1',
-    name: 'Main Office',
-    address: '123 Business Ave, Suite 100, New York, NY 10001',
-    description: 'Corporate headquarters and main reception',
-    isActive: true,
-    registrationUrl: 'main-office',
-    qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(window.location.origin + '/register/main-office'),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    name: 'Research Lab',
-    address: '456 Innovation Dr, Building B, New York, NY 10002',
-    description: 'R&D facility and testing center',
-    isActive: true,
-    registrationUrl: 'research-lab',
-    qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(window.location.origin + '/register/research-lab'),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+// API configuration
+const API_BASE_URL = 'http://localhost:9524/api';
+
+// Helper function to get auth token
+const getAuthToken = () => {
+  return localStorage.getItem('token') || '';
+};
+
+// Helper function to make API requests
+const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+};
 
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [locations, setLocations] = useState<Location[]>(mockLocations);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const generateUrlSlug = (name: string): string => {
-    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  // Load locations from API only
+  const loadLocations = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('🌐 Loading locations from API...');
+      
+      const data = await apiRequest('/locations');
+      console.log('✅ Loaded locations from API:', data.length, 'locations');
+      
+      // Convert API response to our interface format
+      const mappedLocations = data.map((apiLocation: any) => ({
+        id: apiLocation.id.toString(),
+        name: apiLocation.name,
+        address: apiLocation.address,
+        description: apiLocation.description,
+        isActive: apiLocation.isActive,
+        registrationUrl: apiLocation.registrationUrl,
+        qrCodeUrl: apiLocation.qrCodeUrl,
+        createdAt: apiLocation.createdAt,
+        updatedAt: apiLocation.updatedAt
+      }));
+      
+      setLocations(mappedLocations);
+    } catch (err) {
+      console.error('❌ Error loading locations from API:', err);
+      setError('Failed to load locations. Please ensure you are logged in.');
+      setLocations([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const generateQRCode = (url: string): string => {
-    const fullUrl = `${window.location.origin}/register/${url}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(fullUrl)}`;
+  // Load locations on mount
+  useEffect(() => {
+    loadLocations();
+  }, []);
+
+  const addLocation = async (locationData: Omit<Location, 'id' | 'registrationUrl' | 'qrCodeUrl' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('➕ Adding new location via API:', locationData.name);
+      
+      // API data format
+      const apiData = {
+        name: locationData.name,
+        address: locationData.address,
+        description: locationData.description,
+        isActive: locationData.isActive
+      };
+      
+      await apiRequest('/locations', {
+        method: 'POST',
+        body: JSON.stringify(apiData),
+      });
+      
+      console.log('✅ Location created via API');
+      await loadLocations(); // Reload list
+    } catch (err) {
+      console.error('❌ Error creating location via API:', err);
+      setError('Failed to create location. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const addLocation = (locationData: Omit<Location, 'id' | 'registrationUrl' | 'qrCodeUrl' | 'createdAt' | 'updatedAt'>) => {
-    const urlSlug = generateUrlSlug(locationData.name);
-    const newLocation: Location = {
-      ...locationData,
-      id: Date.now().toString(),
-      registrationUrl: urlSlug,
-      qrCodeUrl: generateQRCode(urlSlug),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setLocations(prev => [...prev, newLocation]);
+  const updateLocation = async (id: string, updates: Partial<Location>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('✏️ Updating location via API:', id);
+      
+      // API data format
+      const apiData = {
+        name: updates.name,
+        address: updates.address,
+        description: updates.description,
+        isActive: updates.isActive
+      };
+      
+      await apiRequest(`/locations/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(apiData),
+      });
+      
+      console.log('✅ Location updated via API');
+      await loadLocations(); // Reload list  
+    } catch (err) {
+      console.error('❌ Error updating location via API:', err);
+      setError('Failed to update location. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateLocation = (id: string, updates: Partial<Location>) => {
-    setLocations(prev => prev.map(location => {
-      if (location.id === id) {
-        const updatedLocation = { ...location, ...updates, updatedAt: new Date().toISOString() };
-        // Regenerate URL and QR code if name changed
-        if (updates.name && updates.name !== location.name) {
-          const newUrlSlug = generateUrlSlug(updates.name);
-          updatedLocation.registrationUrl = newUrlSlug;
-          updatedLocation.qrCodeUrl = generateQRCode(newUrlSlug);
-        }
-        return updatedLocation;
+  const deleteLocation = async (id: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('🗑️ Deleting location via API:', id);
+      
+      // Convert string ID to number for API
+      const numericId = parseInt(id, 10);
+      if (isNaN(numericId)) {
+        throw new Error('Invalid location ID');
       }
-      return location;
-    }));
+      
+      await apiRequest(`/locations/${numericId}`, {
+        method: 'DELETE',
+      });
+      
+      console.log('✅ Location deleted via API');
+      await loadLocations(); // Reload list
+    } catch (err) {
+      console.error('❌ Error deleting location via API:', err);
+      setError('Failed to delete location. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const deleteLocation = (id: string) => {
-    setLocations(prev => prev.filter(location => location.id !== id));
-  };
-
+  // Helper functions (these work with local state)
   const getLocationById = (id: string) => {
     return locations.find(location => location.id === id);
   };
@@ -111,13 +197,15 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <LocationContext.Provider value={{
-      locations,
-      addLocation,
-      updateLocation,
-      deleteLocation,
-      getLocationById,
+    <LocationContext.Provider value={{ 
+      locations, 
+      addLocation, 
+      updateLocation, 
+      deleteLocation, 
+      getLocationById, 
       getLocationByUrl,
+      isLoading,
+      error
     }}>
       {children}
     </LocationContext.Provider>

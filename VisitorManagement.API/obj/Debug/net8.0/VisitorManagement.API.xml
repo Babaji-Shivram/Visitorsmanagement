@@ -1,0 +1,366 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>VisitorManagement.API</name>
+    </assembly>
+    <members>
+        <member name="T:VisitorManagement.API.Controllers.AuthController">
+            <summary>
+            Authentication and authorization endpoints for user management
+            </summary>
+            <remarks>
+            This controller handles user authentication, registration, and user management operations.
+            It supports both regular user login and staff member authentication with role-based access control.
+            
+            Key Features:
+            - JWT token-based authentication
+            - Role-based access control (Admin, Staff, Reception)
+            - Staff member authentication
+            - User registration and management
+            </remarks>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.AuthController.Login(VisitorManagement.API.Models.DTOs.LoginRequestDto)">
+            <summary>
+            Authenticates a user and returns a JWT token
+            </summary>
+            <param name="request">Login credentials containing email and password</param>
+            <returns>A JWT token and user information if authentication is successful</returns>
+            <remarks>
+            This endpoint attempts to authenticate both regular users and staff members.
+            If regular user authentication fails, it will automatically try staff authentication.
+            
+            Sample request:
+            
+                POST /api/auth/login
+                {
+                    "email": "admin@company.com",
+                    "password": "Admin123!"
+                }
+            
+            Sample response:
+            
+                {
+                    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "user": {
+                        "id": "user-guid",
+                        "email": "admin@company.com",
+                        "firstName": "Admin",
+                        "lastName": "User",
+                        "role": "Admin"
+                    }
+                }
+            </remarks>
+            <response code="200">Returns the JWT token and user information</response>
+            <response code="401">If the credentials are invalid</response>
+            <response code="400">If the request is malformed</response>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.AuthController.Register(VisitorManagement.API.Models.DTOs.RegisterRequestDto)">
+            <summary>
+            Registers a new user in the system
+            </summary>
+            <param name="request">User registration details including email, password, name, and role</param>
+            <returns>The created user information</returns>
+            <remarks>
+            This endpoint requires Admin role authorization. Only administrators can create new users.
+            
+            Available roles:
+            - Admin: Full system access
+            - Staff: Staff member with limited access
+            - Reception: Reception desk operations
+            
+            Sample request:
+            
+                POST /api/auth/register
+                Authorization: Bearer YOUR_JWT_TOKEN
+                {
+                    "email": "newuser@company.com",
+                    "password": "StrongPass123!",
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "role": "Staff"
+                }
+            
+            Password requirements:
+            - Minimum 6 characters
+            - At least one uppercase letter
+            - At least one lowercase letter
+            - At least one digit
+            </remarks>
+            <response code="201">Returns the created user information</response>
+            <response code="400">If the registration data is invalid or user creation fails</response>
+            <response code="401">If the user is not authenticated</response>
+            <response code="403">If the user doesn't have Admin role</response>
+        </member>
+        <member name="T:VisitorManagement.API.Controllers.EmailController">
+            <summary>
+            Email notification management for visitor system
+            </summary>
+            <remarks>
+            This controller manages all email notifications in the visitor management system.
+            It integrates with Microsoft Office 365 Exchange Server to send professional
+            HTML-formatted emails for various visitor lifecycle events.
+            
+            Key Features:
+            - Staff notifications when visitors mention them
+            - Visitor approval/rejection notifications
+            - Check-in/check-out confirmations
+            - Professional HTML email templates
+            - Office 365 Exchange Server integration
+            - SMTP connectivity testing
+            
+            All endpoints require authentication and appropriate role permissions.
+            </remarks>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.NotifyStaff(System.Int32,VisitorManagement.API.Controllers.NotifyStaffRequest)">
+            <summary>
+            Send a visitor notification email to staff member
+            </summary>
+            <param name="visitorId">The ID of the visitor who mentioned the staff member</param>
+            <param name="request">Contains the staff member's email address</param>
+            <returns>Success confirmation or error message</returns>
+            <remarks>
+            This endpoint sends an automated notification to a staff member when a visitor
+            mentions them during the registration process. The email includes visitor details,
+            purpose of visit, and expected arrival time.
+            
+            Sample request:
+            
+                POST /api/email/notify-staff/123
+                Authorization: Bearer YOUR_JWT_TOKEN
+                {
+                    "staffEmail": "john.doe@company.com"
+                }
+            
+            The email template includes:
+            - Visitor's name and contact information
+            - Purpose of visit
+            - Expected arrival time
+            - Company branding and professional formatting
+            </remarks>
+            <response code="200">Email sent successfully</response>
+            <response code="400">Invalid visitor ID or staff email</response>
+            <response code="401">User not authenticated</response>
+            <response code="500">Email sending failed due to server error</response>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.SendTestEmail(VisitorManagement.API.Models.Email.TestEmailRequest)">
+            <summary>
+            Send a test email to verify email service configuration
+            </summary>
+            <param name="request">Contains the recipient email address and optional message</param>
+            <returns>Success confirmation or error message</returns>
+            <remarks>
+            This endpoint sends a test email to verify that the email service is properly configured
+            and working. It's useful for administrators to troubleshoot email delivery issues.
+            
+            Sample request:
+            
+                POST /api/email/test
+                Authorization: Bearer YOUR_JWT_TOKEN
+                {
+                    "email": "test@example.com",
+                    "message": "Optional custom test message"
+                }
+            </remarks>
+            <response code="200">Test email sent successfully</response>
+            <response code="400">Invalid email address</response>
+            <response code="401">User not authenticated</response>
+            <response code="403">User not authorized (admin only)</response>
+            <response code="500">Email sending failed due to server error</response>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.TestConnection">
+            <summary>
+            Test SMTP server connection
+            </summary>
+            <returns>Connection test results</returns>
+            <remarks>
+            This endpoint tests the connection to the configured SMTP server without
+            actually sending an email. It's useful for checking if the SMTP server
+            is reachable and the credentials are valid.
+            </remarks>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.SendApprovalConfirmation(System.Int32)">
+            <summary>
+            Send approval confirmation to visitor
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.SendRejectionNotice(System.Int32,VisitorManagement.API.Controllers.RejectionNoticeRequest)">
+            <summary>
+            Send rejection notice to visitor
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.SendCustomEmail(VisitorManagement.API.Models.Email.EmailNotificationRequest)">
+            <summary>
+            Send custom email notification
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.TestEmailConnection">
+            <summary>
+            Test email server connectivity and configuration
+            </summary>
+            <returns>Success or failure status of the email connection test</returns>
+            <remarks>
+            This endpoint tests the connection to the configured SMTP server (Office 365).
+            It verifies that the email settings are correct and the server is reachable.
+            Only administrators can perform this test.
+            
+            Sample request:
+            
+                POST /api/email/test-connection
+                Authorization: Bearer YOUR_JWT_TOKEN
+            
+            This test validates:
+            - SMTP server connectivity (smtp.office365.com:587)
+            - Authentication credentials
+            - SSL/TLS configuration
+            - Network connectivity
+            
+            Use this endpoint during system setup or troubleshooting email issues.
+            </remarks>
+            <response code="200">Email connection test successful</response>
+            <response code="400">Email connection test failed</response>
+            <response code="401">User not authenticated</response>
+            <response code="403">User doesn't have Admin role</response>
+            <response code="500">Internal server error during test</response>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.EmailController.SendBulkNotifications(VisitorManagement.API.Controllers.BulkNotificationRequest)">
+            <summary>
+            Send bulk notifications (for multiple visitors)
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.GetAllRoleConfigurations">
+            <summary>
+            Get all role configurations
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.GetRoleConfiguration(System.Int32)">
+            <summary>
+            Get role configuration by ID
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.GetRoleConfigurationByName(System.String)">
+            <summary>
+            Get role configuration by name
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.CreateRoleConfiguration(VisitorManagement.API.Models.DTOs.CreateRoleConfigurationDto)">
+            <summary>
+            Create a new role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.UpdateRoleConfiguration(System.Int32,VisitorManagement.API.Models.DTOs.UpdateRoleConfigurationDto)">
+            <summary>
+            Update an existing role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.DeleteRoleConfiguration(System.Int32)">
+            <summary>
+            Delete a role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.ActivateRoleConfiguration(System.Int32)">
+            <summary>
+            Activate a role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.DeactivateRoleConfiguration(System.Int32)">
+            <summary>
+            Deactivate a role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.GetRolePermissions(System.Int32)">
+            <summary>
+            Get permissions for a specific role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.GetRoleRoutes(System.Int32)">
+            <summary>
+            Get routes for a specific role configuration
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.CheckPermission(System.String,System.String)">
+            <summary>
+            Check if a role has a specific permission
+            </summary>
+        </member>
+        <member name="M:VisitorManagement.API.Controllers.RoleConfigurationController.SeedDefaultRoleConfigurations">
+            <summary>
+            Seed default role configurations (for initial setup)
+            </summary>
+        </member>
+        <member name="T:VisitorManagement.API.Migrations.InitialCreate">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.InitialCreate.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.InitialCreate.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.InitialCreate.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:VisitorManagement.API.Migrations.AddPasswordAndRoleToStaffMember">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddPasswordAndRoleToStaffMember.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddPasswordAndRoleToStaffMember.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddPasswordAndRoleToStaffMember.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:VisitorManagement.API.Migrations.AddLocationSettings">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddLocationSettings.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddLocationSettings.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddLocationSettings.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:VisitorManagement.API.Migrations.AddRoleConfigurationSystem">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddRoleConfigurationSystem.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddRoleConfigurationSystem.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddRoleConfigurationSystem.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:VisitorManagement.API.Migrations.AddEmailTemplates">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddEmailTemplates.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddEmailTemplates.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:VisitorManagement.API.Migrations.AddEmailTemplates.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:VisitorManagement.API.Models.Email.TestEmailRequest">
+            <summary>
+            Request model for sending a test email
+            </summary>
+        </member>
+        <member name="P:VisitorManagement.API.Models.Email.TestEmailRequest.Email">
+            <summary>
+            The recipient's email address
+            </summary>
+        </member>
+        <member name="P:VisitorManagement.API.Models.Email.TestEmailRequest.Message">
+            <summary>
+            Optional custom message to include in the test email
+            </summary>
+        </member>
+    </members>
+</doc>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 
 export interface StaffMember {
   id: string;
@@ -6,25 +7,33 @@ export interface StaffMember {
   lastName: string;
   locationId: string;
   email: string;
+  password: string;
   mobileNumber: string;
   phoneNumber: string;
   extension: string;
   designation?: string;
+  role: 'admin' | 'reception' | 'staff';
   photoUrl?: string;
   isActive: boolean;
+  canLogin: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 interface StaffContextType {
   staffMembers: StaffMember[];
-  addStaffMember: (staff: Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateStaffMember: (id: string, updates: Partial<StaffMember>) => void;
-  deleteStaffMember: (id: string) => void;
+  addStaffMember: (staff: Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateStaffMember: (id: string, updates: Partial<StaffMember>) => Promise<void>;
+  deleteStaffMember: (id: string) => Promise<void>;
   getStaffMemberById: (id: string) => StaffMember | undefined;
   getStaffMembersByLocation: (locationId: string) => StaffMember[];
   getActiveStaffMembers: () => StaffMember[];
   getStaffMemberByName: (name: string) => StaffMember | undefined;
+  validateStaffLogin: (email: string, password: string) => StaffMember | null;
+  resetStaffPassword: (id: string, newPassword: string) => Promise<void>;
+  reloadStaffMembers: () => Promise<void>;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const StaffContext = createContext<StaffContextType | undefined>(undefined);
@@ -37,129 +46,209 @@ export const useStaff = () => {
   return context;
 };
 
-// Mock staff data for demonstration
-const mockStaffMembers: StaffMember[] = [
-  {
-    id: '1',
-    firstName: 'Emily',
-    lastName: 'Watson',
-    locationId: '1',
-    email: 'emily.watson@company.com',
-    mobileNumber: '+1 (555) 200-1003',
-    phoneNumber: '+1 (555) 100-1003',
-    extension: '1003',
-    designation: 'Senior Engineer',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    firstName: 'David',
-    lastName: 'Rodriguez',
-    locationId: '1',
-    email: 'david.rodriguez@company.com',
-    mobileNumber: '+1 (555) 200-1004',
-    phoneNumber: '+1 (555) 100-1004',
-    extension: '1004',
-    designation: 'Marketing Manager',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '3',
-    firstName: 'Lisa',
-    lastName: 'Thompson',
-    locationId: '1',
-    email: 'lisa.thompson@company.com',
-    mobileNumber: '+1 (555) 200-1005',
-    phoneNumber: '+1 (555) 100-1005',
-    extension: '1005',
-    designation: 'HR Director',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '4',
-    firstName: 'Michael',
-    lastName: 'Chen',
-    locationId: '2',
-    email: 'michael.chen@company.com',
-    mobileNumber: '+1 (555) 200-1006',
-    phoneNumber: '+1 (555) 100-1006',
-    extension: '1006',
-    designation: 'Operations Manager',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '5',
-    firstName: 'Sarah',
-    lastName: 'Johnson',
-    locationId: '1',
-    email: 'sarah.johnson@company.com',
-    mobileNumber: '+1 (555) 200-1001',
-    phoneNumber: '+1 (555) 100-1001',
-    extension: '1001',
-    designation: 'Receptionist',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+// API configuration
+const API_BASE_URL = 'http://localhost:9524/api';
+
+// Helper function to get auth token
+const getAuthToken = () => {
+  return localStorage.getItem('token') || '';
+};
+
+// Helper function to make API requests
+const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  const token = getAuthToken();
+  console.log('🌐 Making API request to:', `${API_BASE_URL}${endpoint}`);
+  console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'NO TOKEN');
+  
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : '',
+      ...options.headers,
+    },
+  });
+
+  console.log('📡 API Response status:', response.status, response.statusText);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('❌ API Error response:', errorText);
+    throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  console.log('✅ API Success response:', result);
+  return result;
+};
 
 export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(mockStaffMembers);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
 
-  // Load staff from localStorage on mount
-  useEffect(() => {
-    const savedStaff = localStorage.getItem('staffMembers');
-    if (savedStaff) {
-      try {
-        const parsed = JSON.parse(savedStaff);
-        setStaffMembers(parsed);
-      } catch (error) {
-        console.error('Error loading staff members:', error);
-      }
+  // Load staff members from API only
+  const loadStaffMembers = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('🌐 Loading staff members from API...');
+      
+      const data = await apiRequest('/staff');
+      console.log('✅ Loaded staff members from API:', data.length, 'members');
+      
+      // Convert API response to our interface format
+      const mappedStaff = data.map((apiStaff: any) => ({
+        id: apiStaff.id.toString(),
+        firstName: apiStaff.firstName,
+        lastName: apiStaff.lastName,
+        locationId: apiStaff.locationId.toString(),
+        email: apiStaff.email,
+        password: apiStaff.password || '', // API might not return password
+        mobileNumber: apiStaff.mobileNumber,
+        phoneNumber: apiStaff.phoneNumber,
+        extension: apiStaff.extension,
+        designation: apiStaff.designation,
+        role: apiStaff.role || 'staff',
+        photoUrl: apiStaff.photoUrl,
+        isActive: apiStaff.isActive,
+        canLogin: apiStaff.canLogin || false,
+        createdAt: apiStaff.createdAt,
+        updatedAt: apiStaff.updatedAt
+      }));
+      
+      setStaffMembers(mappedStaff);
+    } catch (err) {
+      console.error('❌ Error loading staff members from API:', err);
+      setError('Failed to load staff members. Please ensure you are logged in.');
+      setStaffMembers([]);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  };
 
-  // Save staff to localStorage whenever they change
+  // Load staff members when authenticated
   useEffect(() => {
-    localStorage.setItem('staffMembers', JSON.stringify(staffMembers));
-  }, [staffMembers]);
+    const token = getAuthToken();
+    console.log('🔑 StaffContext useEffect - authenticated:', isAuthenticated);
+    console.log('🔑 StaffContext useEffect - token available:', !!token);
+    
+    if (isAuthenticated && token) {
+      console.log('🚀 Starting staff members load...');
+      loadStaffMembers();
+    } else {
+      console.log('🔒 Skipping staff load - not authenticated or no token');
+      setStaffMembers([]);
+      setError(null); // Don't show error if just not authenticated yet
+    }
+  }, [isAuthenticated]);
 
-  const addStaffMember = (staffData: Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newStaff: StaffMember = {
-      ...staffData,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setStaffMembers(prev => [...prev, newStaff]);
+  const addStaffMember = async (staffData: Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('➕ Adding new staff member via API:', staffData);
+      
+      const apiData = {
+        firstName: staffData.firstName,
+        lastName: staffData.lastName,
+        locationId: parseInt(staffData.locationId),
+        email: staffData.email,
+        mobileNumber: staffData.mobileNumber,
+        phoneNumber: staffData.phoneNumber,
+        extension: staffData.extension,
+        designation: staffData.designation,
+        password: staffData.password,
+        role: staffData.role,
+        canLogin: staffData.canLogin,
+        photoUrl: staffData.photoUrl,
+        isActive: staffData.isActive
+      };
+      
+      await apiRequest('/staff', {
+        method: 'POST',
+        body: JSON.stringify(apiData),
+      });
+      
+      console.log('✅ Staff member created via API');
+      await loadStaffMembers(); // Reload list
+    } catch (err) {
+      console.error('❌ Error creating staff member via API:', err);
+      setError('Failed to create staff member. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateStaffMember = (id: string, updates: Partial<StaffMember>) => {
-    setStaffMembers(prev => prev.map(staff => 
-      staff.id === id 
-        ? { ...staff, ...updates, updatedAt: new Date().toISOString() }
-        : staff
-    ));
+  const updateStaffMember = async (id: string, updates: Partial<StaffMember>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('🔄 Updating staff member via API:', id, updates);
+      
+      const apiData = {
+        firstName: updates.firstName,
+        lastName: updates.lastName,
+        locationId: updates.locationId ? parseInt(updates.locationId) : undefined,
+        email: updates.email,
+        mobileNumber: updates.mobileNumber,
+        phoneNumber: updates.phoneNumber,
+        extension: updates.extension,
+        designation: updates.designation,
+        password: updates.password,
+        role: updates.role,
+        canLogin: updates.canLogin,
+        photoUrl: updates.photoUrl,
+        isActive: updates.isActive
+      };
+      
+      await apiRequest(`/staff/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(apiData),
+      });
+      
+      console.log('✅ Staff member updated via API');
+      await loadStaffMembers(); // Reload list
+    } catch (err) {
+      console.error('❌ Error updating staff member via API:', err);
+      setError('Failed to update staff member. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const deleteStaffMember = (id: string) => {
-    setStaffMembers(prev => prev.filter(staff => staff.id !== id));
+  const deleteStaffMember = async (id: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('🗑️ Deleting staff member via API:', id);
+      
+      await apiRequest(`/staff/${id}`, {
+        method: 'DELETE',
+      });
+      
+      console.log('✅ Staff member deleted via API');
+      await loadStaffMembers(); // Reload list
+    } catch (err) {
+      console.error('❌ Error deleting staff member via API:', err);
+      setError('Failed to delete staff member. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const resetStaffPassword = async (id: string, newPassword: string) => {
+    await updateStaffMember(id, { password: newPassword });
+  };
+
+  // Helper functions (these work with local state)
   const getStaffMemberById = (id: string) => {
     return staffMembers.find(staff => staff.id === id);
   };
 
   const getStaffMembersByLocation = (locationId: string) => {
-    return staffMembers.filter(staff => staff.locationId === locationId && staff.isActive);
+    return staffMembers.filter(staff => staff.locationId === locationId);
   };
 
   const getActiveStaffMembers = () => {
@@ -168,9 +257,18 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getStaffMemberByName = (name: string) => {
     return staffMembers.find(staff => 
-      `${staff.firstName} ${staff.lastName}` === name || 
-      `Dr. ${staff.firstName} ${staff.lastName}` === name
+      `${staff.firstName} ${staff.lastName}`.toLowerCase().includes(name.toLowerCase())
     );
+  };
+
+  const validateStaffLogin = (email: string, password: string) => {
+    const staff = staffMembers.find(s => 
+      s.email.toLowerCase() === email.toLowerCase() && 
+      s.password === password && 
+      s.isActive && 
+      s.canLogin
+    );
+    return staff || null;
   };
 
   return (
@@ -183,6 +281,11 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       getStaffMembersByLocation,
       getActiveStaffMembers,
       getStaffMemberByName,
+      validateStaffLogin,
+      resetStaffPassword,
+      reloadStaffMembers: loadStaffMembers,
+      isLoading,
+      error
     }}>
       {children}
     </StaffContext.Provider>

@@ -1,0 +1,3 @@
+﻿<Project>
+  <Import Project="..\build\VisitorManagement.API.props" />
+</Project>

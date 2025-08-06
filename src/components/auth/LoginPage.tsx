@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogIn, Users, Shield, UserCheck, Eye, EyeOff, Building2, Sparkles } from 'lucide-react';
+import { LogIn, Eye, EyeOff, Sparkles } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -9,6 +10,7 @@ const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,7 +19,10 @@ const LoginPage: React.FC = () => {
 
     try {
       const success = await login(email, password);
-      if (!success) {
+      if (success) {
+        console.log('🎯 Login successful, navigating to dashboard...');
+        navigate('/dashboard');
+      } else {
         setError('Invalid credentials. Please try again.');
       }
     } catch (err) {
@@ -25,35 +30,6 @@ const LoginPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const demoUsers = [
-    { 
-      email: 'reception@company.com', 
-      role: 'Reception', 
-      icon: Users, 
-      color: 'bg-blue-500',
-      description: 'Manage visitor check-ins and check-outs'
-    },
-    { 
-      email: 'admin@company.com', 
-      role: 'Admin', 
-      icon: Shield, 
-      color: 'bg-purple-500',
-      description: 'Full system administration and analytics'
-    },
-    { 
-      email: 'emily.watson@company.com', 
-      role: 'Staff', 
-      icon: UserCheck, 
-      color: 'bg-green-500',
-      description: 'Approve and manage visitor requests'
-    },
-  ];
-
-  const quickLogin = (userEmail: string) => {
-    setEmail(userEmail);
-    setPassword('demo');
   };
 
   return (
@@ -72,8 +48,12 @@ const LoginPage: React.FC = () => {
           <div className="bg-gradient-to-r from-[#2d4170] via-[#3a4f7a] to-[#475d84] px-8 py-8 text-center relative">
             <div className="absolute inset-0 bg-black/10"></div>
             <div className="relative z-10">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl mb-4 border border-white/30">
-                <Building2 className="w-10 h-10 text-white" />
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-4 overflow-hidden">
+                <img 
+                  src="/Babaji Icon.png" 
+                  alt="Babaji Icon" 
+                  className="w-16 h-16 object-contain"
+                />
               </div>
               <h1 className="text-3xl font-bold text-white mb-2">Babaji Shivram</h1>
               <p className="text-blue-100 text-lg">Visitor Management System</p>
@@ -158,47 +138,6 @@ const LoginPage: React.FC = () => {
                 )}
               </button>
             </form>
-          </div>
-        </div>
-
-        {/* Demo Accounts Section */}
-        <div className="mt-8 bg-white/60 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-6">
-          <div className="text-center mb-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Demo Accounts</h3>
-            <p className="text-gray-600 text-sm">Click any account below to quick login</p>
-          </div>
-          
-          <div className="space-y-3">
-            {demoUsers.map((user) => {
-              const IconComponent = user.icon;
-              return (
-                <button
-                  key={user.email}
-                  onClick={() => quickLogin(user.email)}
-                  className="w-full flex items-center p-4 bg-white/70 hover:bg-white/90 rounded-xl transition duration-200 text-left border border-white/30 hover:border-white/50 shadow-sm hover:shadow-md group"
-                >
-                  <div className={`w-12 h-12 ${user.color} rounded-xl flex items-center justify-center mr-4 shadow-lg group-hover:scale-105 transition duration-200`}>
-                    <IconComponent className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-900 text-lg">{user.role}</div>
-                    <div className="text-sm text-gray-600 mb-1">{user.email}</div>
-                    <div className="text-xs text-gray-500">{user.description}</div>
-                  </div>
-                  <div className="text-gray-400 group-hover:text-gray-600 transition duration-200">
-                    <LogIn className="w-5 h-5" />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          
-          <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-            <div className="flex items-center text-blue-800 text-sm">
-              <div className="w-2 h-2 bg-[#EB6E38] rounded-full mr-2 animate-pulse"></div>
-              <span className="font-medium">Demo Mode:</span>
-              <span className="ml-1">Password is "demo" for all accounts</span>
-            </div>
           </div>
         </div>
 

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Debug Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal.show {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+        }
+        video {
+            width: 100%;
+            height: 300px;
+            background: black;
+            border-radius: 5px;
+        }
+        button {
+            margin: 10px 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .primary { background: #007bff; color: white; }
+        .success { background: #28a745; color: white; }
+        .secondary { background: #6c757d; color: white; }
+    </style>
+</head>
+<body>
+    <h1>Camera Debug Test</h1>
+    <button onclick="startCamera()" class="primary">Test Camera</button>
+    <div id="status"></div>
+
+    <div id="cameraModal" class="modal">
+        <div class="modal-content">
+            <h3>Camera Test</h3>
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+            <div>
+                <button onclick="capturePhoto()" class="success">Capture Photo</button>
+                <button onclick="stopCamera()" class="secondary">Close</button>
+            </div>
+            <div id="photoResult"></div>
+        </div>
+    </div>
+
+    <script>
+        let stream = null;
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const modal = document.getElementById('cameraModal');
+        const status = document.getElementById('status');
+
+        async function startCamera() {
+            try {
+                status.innerHTML = 'Requesting camera access...';
+                
+                // Request camera access
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                
+                status.innerHTML = 'Camera access granted!';
+                video.srcObject = stream;
+                modal.classList.add('show');
+                
+            } catch (error) {
+                console.error('Camera error:', error);
+                status.innerHTML = `Camera error: ${error.message}`;
+                alert(`Camera error: ${error.message}`);
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            modal.classList.remove('show');
+            status.innerHTML = 'Camera stopped.';
+        }
+
+        function capturePhoto() {
+            if (video.videoWidth === 0) {
+                alert('Video not ready yet, please wait a moment');
+                return;
+            }
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            const photoData = canvas.toDataURL('image/jpeg', 0.9);
+            
+            document.getElementById('photoResult').innerHTML = 
+                `<h4>Photo Captured!</h4><img src="${photoData}" style="max-width: 100%; border-radius: 5px;">`;
+            
+            status.innerHTML = 'Photo captured successfully!';
+        }
+
+        // Test if getUserMedia is available
+        window.onload = function() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                status.innerHTML = 'Camera API is available. Click "Test Camera" to start.';
+            } else {
+                status.innerHTML = 'Camera API not supported in this browser.';
+            }
+        };
+    </script>
+</body>
+</html>

@@ -8,6 +8,21 @@ const StaffApproval: React.FC = () => {
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState<'pending' | 'all'>('pending');
   const [actioningVisitor, setActioningVisitor] = useState<string | null>(null);
+  const [rescheduleModal, setRescheduleModal] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    currentDate: string;
+    newDate: string;
+    newTime: string;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    currentDate: '',
+    newDate: '',
+    newTime: ''
+  });
 
   const pendingVisitors = visitors.filter(v => 
     v.status === 'awaiting_approval' && v.whomToMeet === user?.name
@@ -18,11 +33,68 @@ const StaffApproval: React.FC = () => {
   const handleAction = async (visitorId: string, action: 'approved' | 'rejected' | 'rescheduled') => {
     setActioningVisitor(visitorId);
     
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const success = await updateVisitorStatus(visitorId, action);
+      
+      if (success) {
+        console.log(`✅ Successfully ${action} visitor ${visitorId}`);
+      } else {
+        console.error(`❌ Failed to ${action} visitor ${visitorId}`);
+        alert(`Failed to ${action} visitor. Please try again.`);
+      }
+    } catch (error) {
+      console.error(`❌ Error updating visitor status:`, error);
+      alert(`Error updating visitor status. Please try again.`);
+    } finally {
+      setActioningVisitor(null);
+    }
+  };
+
+  // Handle reschedule modal
+  const openRescheduleModal = (visitor: any) => {
+    const currentDateTime = new Date(visitor.dateTime);
+    setRescheduleModal({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      currentDate: visitor.dateTime,
+      newDate: currentDateTime.toISOString().split('T')[0],
+      newTime: currentDateTime.toTimeString().slice(0, 5)
+    });
+  };
+
+  const closeRescheduleModal = () => {
+    setRescheduleModal({
+      isOpen: false,
+      visitorId: null,
+      visitorName: '',
+      currentDate: '',
+      newDate: '',
+      newTime: ''
+    });
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleModal.visitorId || !rescheduleModal.newDate || !rescheduleModal.newTime) {
+      return;
+    }
+
+    setActioningVisitor(rescheduleModal.visitorId);
     
-    updateVisitorStatus(visitorId, action);
-    setActioningVisitor(null);
+    try {
+      // Combine date and time (would be used in real API call)
+      // const newDateTime = new Date(`${rescheduleModal.newDate}T${rescheduleModal.newTime}`);
+      
+      // Here you would typically call an API to update the visitor's date/time
+      // For now, we'll just update the status to rescheduled
+      await updateVisitorStatus(rescheduleModal.visitorId, 'rescheduled');
+      
+      closeRescheduleModal();
+    } catch (error) {
+      console.error('Error rescheduling visitor:', error);
+    } finally {
+      setActioningVisitor(null);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -181,7 +253,7 @@ const StaffApproval: React.FC = () => {
                           </button>
                           
                           <button
-                            onClick={() => handleAction(visitor.id, 'rescheduled')}
+                            onClick={() => openRescheduleModal(visitor)}
                             disabled={actioningVisitor === visitor.id}
                             className="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
                           >
@@ -207,6 +279,82 @@ const StaffApproval: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Reschedule Modal */}
+      {rescheduleModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Reschedule Visitor
+            </h3>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Visitor:</strong> {rescheduleModal.visitorName}
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                <strong>Current Date/Time:</strong> {new Date(rescheduleModal.currentDate).toLocaleString()}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Date
+                </label>
+                <input
+                  type="date"
+                  value={rescheduleModal.newDate}
+                  onChange={(e) => setRescheduleModal(prev => ({
+                    ...prev,
+                    newDate: e.target.value
+                  }))}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Time
+                </label>
+                <input
+                  type="time"
+                  value={rescheduleModal.newTime}
+                  onChange={(e) => setRescheduleModal(prev => ({
+                    ...prev,
+                    newTime: e.target.value
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={closeRescheduleModal}
+                className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 font-medium rounded-md transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReschedule}
+                disabled={!rescheduleModal.newDate || !rescheduleModal.newTime || actioningVisitor === rescheduleModal.visitorId}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-md transition duration-200"
+              >
+                {actioningVisitor === rescheduleModal.visitorId ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2 inline-block"></div>
+                    Rescheduling...
+                  </>
+                ) : (
+                  'Reschedule'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

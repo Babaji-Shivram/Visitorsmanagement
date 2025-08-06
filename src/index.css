@@ -1,3 +1,43 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Mobile camera optimizations */
+@media (max-width: 768px) {
+  /* Prevent zoom on form inputs on iOS */
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  
+  /* Ensure camera video fills mobile screen properly */
+  video {
+    object-fit: cover;
+    width: 100%;
+  }
+  
+  /* Full screen camera experience on mobile */
+  .camera-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    background: black;
+  }
+}
+
+/* Add touch feedback for camera buttons */
+.camera-button:active {
+  transform: scale(0.95);
+  transition: transform 0.1s;
+}
+
+/* Smooth transitions for camera states */
+.camera-transition {
+  transition: all 0.3s ease-in-out;
+}
