@@ -1,17 +1,8 @@
-// Controllers are routed as "api/[controller]"
+// Controllers are now routed directly without /api prefix
 // Handle different deployment scenarios for API routing
 const getApiBaseUrl = () => {
-  const isLocalhost = window.location.hostname === 'localhost' || 
-                     window.location.hostname.startsWith('127.0') ||
-                     window.location.hostname.startsWith('192.168');
-  
-  if (isLocalhost) {
-    return '/api';
-  }
-  
-  // For production, check if we're getting double API paths
-  // If so, use empty string; otherwise use /api
-  return '/api';
+  // No API prefix needed anymore for simplified routing
+  return '';
 };
 
 const API_BASE_URL = getApiBaseUrl();

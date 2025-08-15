@@ -9,13 +9,46 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Proxy any calls starting with /api to the local ASP.NET Core API
-      '/api': {
-        target: 'http://localhost:5014',
+      // Proxy specific controller routes to the ASP.NET Core API
+      '/auth': {
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
-        // keep the /api prefix so the frontend can call /api/... and the API sees /api/...
-        rewrite: (path) => path
+      },
+      '/visitors': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/staff': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/locations': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/email-actions': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/settings': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/roleconfiguration': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false,
       },
     },
   },

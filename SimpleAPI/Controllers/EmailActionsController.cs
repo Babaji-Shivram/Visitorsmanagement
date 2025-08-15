@@ -31,19 +31,19 @@ namespace SimpleAPI.Controllers
                 // Validate token
                 if (!IsValidToken(visitorId, token))
                 {
-                    return BadRequest(GenerateResponsePage("Error", "Invalid or expired approval link.", false));
+                    return Content(GenerateResponsePage("Error", "Invalid or expired approval link.", false), "text/html");
                 }
 
                 var visitor = await _context.Visitors.FindAsync(visitorId);
                 if (visitor == null)
                 {
-                    return NotFound(GenerateResponsePage("Error", "Visitor not found.", false));
+                    return Content(GenerateResponsePage("Error", "Visitor not found.", false), "text/html");
                 }
 
                 if (visitor.Status != VisitorStatus.AwaitingApproval)
                 {
-                    return BadRequest(GenerateResponsePage("Already Processed", 
-                        $"This visitor request has already been {visitor.Status.ToString().ToLower()}.", false));
+                    return Content(GenerateResponsePage("Already Processed", 
+                        $"This visitor request has already been {visitor.Status.ToString().ToLower()}.", false), "text/html");
                 }
 
                 // Update visitor status
@@ -70,13 +70,13 @@ namespace SimpleAPI.Controllers
                     Console.WriteLine($"❌ Failed to send approval email to visitor: {emailEx.Message}");
                 }
 
-                return Ok(GenerateResponsePage("Approved!", 
-                    $"Visitor {visitor.FullName} has been successfully approved. They will receive a confirmation email.", true));
+                return Content(GenerateResponsePage("Approved!", 
+                    $"Visitor {visitor.FullName} has been successfully approved. They will receive a confirmation email.", true), "text/html");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"❌ Error approving visitor: {ex.Message}");
-                return StatusCode(500, GenerateResponsePage("Error", "An error occurred while processing the approval.", false));
+                return Content(GenerateResponsePage("Error", "An error occurred while processing the approval.", false), "text/html");
             }
         }
 
@@ -88,19 +88,19 @@ namespace SimpleAPI.Controllers
                 // Validate token
                 if (!IsValidToken(visitorId, token))
                 {
-                    return BadRequest(GenerateResponsePage("Error", "Invalid or expired rejection link.", false));
+                    return Content(GenerateResponsePage("Error", "Invalid or expired rejection link.", false), "text/html");
                 }
 
                 var visitor = await _context.Visitors.FindAsync(visitorId);
                 if (visitor == null)
                 {
-                    return NotFound(GenerateResponsePage("Error", "Visitor not found.", false));
+                    return Content(GenerateResponsePage("Error", "Visitor not found.", false), "text/html");
                 }
 
                 if (visitor.Status != VisitorStatus.AwaitingApproval)
                 {
-                    return BadRequest(GenerateResponsePage("Already Processed", 
-                        $"This visitor request has already been {visitor.Status.ToString().ToLower()}.", false));
+                    return Content(GenerateResponsePage("Already Processed", 
+                        $"This visitor request has already been {visitor.Status.ToString().ToLower()}.", false), "text/html");
                 }
 
                 // Update visitor status
@@ -130,13 +130,13 @@ namespace SimpleAPI.Controllers
                     Console.WriteLine($"❌ Failed to send rejection email to visitor: {emailEx.Message}");
                 }
 
-                return Ok(GenerateResponsePage("Rejected", 
-                    $"Visitor {visitor.FullName} has been rejected. They will receive a notification email.", true));
+                return Content(GenerateResponsePage("Rejected", 
+                    $"Visitor {visitor.FullName} has been rejected. They will receive a notification email.", true), "text/html");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"❌ Error rejecting visitor: {ex.Message}");
-                return StatusCode(500, GenerateResponsePage("Error", "An error occurred while processing the rejection.", false));
+                return Content(GenerateResponsePage("Error", "An error occurred while processing the rejection.", false), "text/html");
             }
         }
 
@@ -148,19 +148,19 @@ namespace SimpleAPI.Controllers
                 // Validate token
                 if (!IsValidToken(visitorId, token))
                 {
-                    return BadRequest(GenerateResponsePage("Error", "Invalid or expired rejection link.", false));
+                    return Content(GenerateResponsePage("Error", "Invalid or expired rejection link.", false), "text/html");
                 }
 
                 var visitor = await _context.Visitors.FindAsync(visitorId);
                 if (visitor == null)
                 {
-                    return NotFound(GenerateResponsePage("Error", "Visitor not found.", false));
+                    return Content(GenerateResponsePage("Error", "Visitor not found.", false), "text/html");
                 }
 
                 if (visitor.Status != VisitorStatus.AwaitingApproval)
                 {
-                    return BadRequest(GenerateResponsePage("Already Processed", 
-                        $"This visitor request has already been {visitor.Status.ToString().ToLower()}.", false));
+                    return Content(GenerateResponsePage("Already Processed", 
+                        $"This visitor request has already been {visitor.Status.ToString().ToLower()}.", false), "text/html");
                 }
 
                 var rejectForm = $@"
@@ -335,7 +335,7 @@ namespace SimpleAPI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"❌ Error showing reject form: {ex.Message}");
-                return StatusCode(500, GenerateResponsePage("Error", "An error occurred while loading the rejection form.", false));
+                return Content(GenerateResponsePage("Error", "An error occurred while loading the rejection form.", false), "text/html");
             }
         }
 

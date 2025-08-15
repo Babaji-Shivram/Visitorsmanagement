@@ -12,7 +12,7 @@ const EmailTester: React.FC = () => {
   const [result, setResult] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'connected' | 'disconnected'>('idle');
 
-  const getApiBaseUrl = () => '/api';
+  const getApiBaseUrl = () => '';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -66,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // Use a relative API path so it works behind IIS reverse proxy and in HTTPS without redirects
       const apiUrls = [
-        '/api/auth/login'
+        '/auth/login'
       ];
       for (const url of apiUrls) {
         try {

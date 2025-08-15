@@ -63,7 +63,7 @@ namespace SimpleAPI.Services
             {
                 // Generate secure tokens for email actions
                 var token = Controllers.EmailActionsController.GenerateToken(visitorId);
-                var baseUrl = _configuration["BaseUrl"] ?? "http://localhost:5014";
+                var baseUrl = _configuration["BaseUrl"] ?? "http://localhost:5001";
                 var approveUrl = $"{baseUrl}/email-actions/approve/{visitorId}/{token}";
                 var rejectUrl = $"{baseUrl}/email-actions/reject-form/{visitorId}/{token}";
 

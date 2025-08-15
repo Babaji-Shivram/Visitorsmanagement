@@ -1,6 +1,6 @@
 import { RoleConfiguration, CreateRoleConfiguration, UpdateRoleConfiguration, RolePermission, RoleRoute } from '../types/roleTypes';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = '';
 
 class RoleConfigurationService {
   private async getAuthHeaders(): Promise<HeadersInit> {
