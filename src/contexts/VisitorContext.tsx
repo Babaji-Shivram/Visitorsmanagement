@@ -30,6 +30,9 @@ interface VisitorContextType {
   isLoading: boolean;
   addVisitor: (visitor: Omit<Visitor, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
   updateVisitorStatus: (id: string, status: Visitor['status'], notes?: string) => Promise<boolean>;
+  updateVisitorAssignment: (id: string, newWhomToMeet: string) => Promise<boolean>;
+  rescheduleVisitor: (id: string, newDateTime: string) => Promise<boolean>;
+  deleteVisitor: (id: string) => Promise<boolean>;
   getVisitorsByDate: (date: string, locationId?: string) => Visitor[];
   getVisitorById: (id: string) => Visitor | undefined;
   checkInVisitor: (id: string) => Promise<boolean>;
@@ -99,10 +102,30 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [user]);
 
-  const refreshVisitors = async () => {
+  // Set up real-time polling for visitor updates
+  useEffect(() => {
+    if (!user) return;
+
+    // Initial load
+    refreshVisitors();
+
+    // Set up polling every 3 seconds for real-time updates
+    const pollInterval = setInterval(() => {
+      refreshVisitors(false); // Don't show loading spinner for background updates
+    }, 3000);
+
+    // Cleanup interval on unmount or when user changes
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [user]);
+
+  const refreshVisitors = async (showLoading = true) => {
     if (!user) return;
     
-    setIsLoading(true);
+    if (showLoading) {
+      setIsLoading(true);
+    }
     try {
       let apiVisitors: VisitorDto[] = [];
       
@@ -114,9 +137,14 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
       else if ((user.role === 'reception' || user.role === 'staff') && user.locationId) {
         apiVisitors = await apiService.getVisitors(user.locationId);
       }
-      // Fallback: no location assigned or invalid role
+      // Fallback: try to load all visitors if user has valid role but no specific location
+      else if (user.role === 'reception' || user.role === 'staff' || user.role === 'admin') {
+        console.warn('User has no specific location assigned, loading all visitors');
+        apiVisitors = await apiService.getVisitors();
+      }
+      // Invalid role or no access
       else {
-        console.warn('User has no location assigned or invalid role for visitor access');
+        console.warn('User has invalid role for visitor access:', user.role);
         apiVisitors = [];
       }
       
@@ -126,7 +154,9 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.error('Error loading visitors:', error);
       setVisitors([]);
     } finally {
-      setIsLoading(false);
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -149,7 +179,7 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const success = await apiService.registerVisitor(registrationData);
       if (success) {
         // Refresh the visitors list to get the latest data
-        await refreshVisitors();
+        await refreshVisitors(false); // Silent refresh for better UX
       }
       return success;
     } catch (error) {
@@ -166,7 +196,7 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       if (success) {
         console.log(`🔄 VisitorContext: Refreshing visitors after successful status update`);
-        await refreshVisitors();
+        await refreshVisitors(false); // Silent refresh for better UX
         console.log(`✅ VisitorContext: Visitor list refreshed`);
       } else {
         console.error(`❌ VisitorContext: Failed to update visitor ${id} status to ${status}`);
@@ -178,11 +208,71 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const updateVisitorAssignment = async (id: string, newWhomToMeet: string): Promise<boolean> => {
+    try {
+      console.log(`🔄 VisitorContext: Starting assignment update for visitor ${id} to ${newWhomToMeet}`);
+      const success = await apiService.updateVisitorAssignment(parseInt(id), newWhomToMeet);
+      console.log(`📡 VisitorContext: API response for visitor ${id} assignment update:`, success);
+      
+      if (success) {
+        console.log(`🔄 VisitorContext: Refreshing visitors after successful assignment update`);
+        await refreshVisitors(false); // Silent refresh for better UX
+        console.log(`✅ VisitorContext: Visitor list refreshed`);
+      } else {
+        console.error(`❌ VisitorContext: Failed to update visitor ${id} assignment to ${newWhomToMeet}`);
+      }
+      return success;
+    } catch (error) {
+      console.error('❌ VisitorContext: Error updating visitor assignment:', error);
+      return false;
+    }
+  };
+
+  const rescheduleVisitor = async (id: string, newDateTime: string): Promise<boolean> => {
+    try {
+      console.log(`🔄 VisitorContext: Starting reschedule for visitor ${id} to ${newDateTime}`);
+      const success = await apiService.rescheduleVisitor(parseInt(id), newDateTime);
+      console.log(`📡 VisitorContext: API response for visitor ${id} reschedule:`, success);
+      
+      if (success) {
+        console.log(`🔄 VisitorContext: Refreshing visitors after successful reschedule`);
+        await refreshVisitors(false); // Silent refresh for better UX
+        console.log(`✅ VisitorContext: Visitor list refreshed`);
+      } else {
+        console.error(`❌ VisitorContext: Failed to reschedule visitor ${id} to ${newDateTime}`);
+      }
+      return success;
+    } catch (error) {
+      console.error('❌ VisitorContext: Error rescheduling visitor:', error);
+      return false;
+    }
+  };
+
+  const deleteVisitor = async (id: string): Promise<boolean> => {
+    try {
+      console.log(`🗑️ VisitorContext: Starting delete for visitor ${id}`);
+      const success = await apiService.deleteVisitor(parseInt(id));
+      console.log(`📡 VisitorContext: API response for visitor ${id} delete:`, success);
+      
+      if (success) {
+        console.log(`🔄 VisitorContext: Refreshing visitors after successful delete`);
+        await refreshVisitors(false); // Silent refresh for better UX
+        console.log(`✅ VisitorContext: Visitor ${id} deleted successfully`);
+      } else {
+        console.error(`❌ VisitorContext: Failed to delete visitor ${id}`);
+      }
+      return success;
+    } catch (error) {
+      console.error('❌ VisitorContext: Error deleting visitor:', error);
+      return false;
+    }
+  };
+
   const checkInVisitor = async (id: string): Promise<boolean> => {
     try {
       const success = await apiService.checkInVisitor(parseInt(id));
       if (success) {
-        await refreshVisitors();
+        await refreshVisitors(false); // Silent refresh for better UX
       }
       return success;
     } catch (error) {
@@ -195,7 +285,7 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const success = await apiService.checkOutVisitor(parseInt(id));
       if (success) {
-        await refreshVisitors();
+        await refreshVisitors(false); // Silent refresh for better UX
       }
       return success;
     } catch (error) {
@@ -236,6 +326,9 @@ export const VisitorProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isLoading,
       addVisitor,
       updateVisitorStatus,
+      updateVisitorAssignment,
+      rescheduleVisitor,
+      deleteVisitor,
       getVisitorsByDate,
       getVisitorById,
       checkInVisitor,

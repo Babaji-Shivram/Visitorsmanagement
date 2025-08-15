@@ -45,23 +45,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const storedUser = localStorage.getItem('user');
     const storedToken = localStorage.getItem('token');
     
-    console.log('🔍 AuthContext useEffect - checking localStorage user:', storedUser);
-    console.log('🔍 AuthContext useEffect - checking localStorage token:', storedToken ? 'Present' : 'Missing');
-    
     if (storedUser && storedToken) {
       try {
         const parsedUser = JSON.parse(storedUser);
-        console.log('🔄 Restoring user session with valid token:', parsedUser);
         setUser(parsedUser);
         setIsAuthenticated(true);
       } catch (error) {
-        console.error('❌ Error parsing stored user data:', error);
         // Clear invalid data
         localStorage.removeItem('user');
         localStorage.removeItem('token');
       }
     } else {
-      console.log('❌ No valid session found - missing user data or token');
       // Clear any incomplete data
       localStorage.removeItem('user');
       localStorage.removeItem('token');
@@ -69,20 +63,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    console.log('🔐 Login attempt:', { email, password: '***' });
-    
     try {
-      // Try API authentication - using our running API server
-      const getApiUrls = () => {
-        const serverIP = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-          ? 'localhost' 
-          : window.location.hostname;
-        return [`http://${serverIP}:9524/api/auth/login`];
-      };
-      
-      const apiUrls = getApiUrls();
-      
-      console.log('🌐 Trying API authentication...');
+      // Use a relative API path so it works behind IIS reverse proxy and in HTTPS without redirects
+      const apiUrls = [
+        '/api/auth/login'
+      ];
       for (const url of apiUrls) {
         try {
           const response = await fetch(url, {
@@ -96,20 +81,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (response.ok) {
             const data = await response.json();
             
-            // Map numeric role to string
-            const roleMap: Record<number, 'reception' | 'admin' | 'staff'> = {
-              1: 'reception',
-              2: 'admin', 
-              3: 'staff'
-            };
+            // Handle both string and numeric role formats from API
+            let userRole: 'reception' | 'admin' | 'staff' = 'staff';
+            
+            if (typeof data.user.role === 'string') {
+              // API returns string role (current SimpleAPI format)
+              userRole = data.user.role as 'reception' | 'admin' | 'staff';
+            } else if (typeof data.user.role === 'number') {
+              // Legacy numeric role mapping (if needed for other APIs)
+              const roleMap: Record<number, 'reception' | 'admin' | 'staff'> = {
+                1: 'reception',
+                2: 'admin', 
+                3: 'staff'
+              };
+              userRole = roleMap[data.user.role] || 'staff';
+            }
             
             const apiUser: User = {
-              id: data.user.id,
-              name: `${data.user.firstName} ${data.user.lastName}`,
+              id: data.user.id.toString(),
+              name: data.user.name || `${data.user.firstName} ${data.user.lastName}`,
               email: data.user.email,
-              phone: data.user.phoneNumber,
+              phone: data.user.phoneNumber || data.user.phone,
               extension: data.user.extension,
-              role: roleMap[data.user.role] || 'staff',
+              role: userRole,
               department: data.user.department,
               locationId: data.user.locationId,
               locationName: data.user.locationName,
@@ -126,7 +120,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
             
-            console.log('✅ API authentication successful:', apiUser);
             setUser(apiUser);
             setIsAuthenticated(true);
             localStorage.setItem('user', JSON.stringify(apiUser));
@@ -135,25 +128,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch (urlError) {
           // Continue to next URL if this one fails
-          console.log(`Failed to connect to ${url}:`, urlError);
         }
       }
     } catch (error) {
-      console.log('API login failed:', error);
+      // API login failed
     }
 
     // No fallback - API authentication only
-    console.log('❌ Login failed: Invalid credentials or API unavailable');
     return false;
   };
 
   const logout = () => {
-    console.log('🚪 Logging out user:', user);
     setUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-    console.log('✅ Logout complete');
   };
 
   const hasPermission = async (permissionName: string): Promise<boolean> => {
@@ -170,7 +159,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Fallback to API check using role name
       return await roleConfigurationService.hasPermission(user.role, permissionName);
     } catch (error) {
-      console.error('Error checking permission:', error);
       return false;
     }
   };

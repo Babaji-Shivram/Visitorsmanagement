@@ -43,12 +43,20 @@ const Navigation: React.FC = () => {
     }
 
     // Filter items based on route permissions if available
-    return items.filter(item => {
+    const filteredItems = items.filter(item => {
       // Always allow register route
       if (item.path === '/register') return true;
-      // Check if user has access to this route
+      
+      // For admin users, ALWAYS allow admin routes regardless of role configuration
+      if (user?.role === 'admin' && (item.path === '/admin' || item.path === '/settings')) {
+        return true;
+      }
+      
+      // For non-admin routes, check if user has access to this route
       return hasRoute(item.path);
     });
+
+    return filteredItems;
   };
 
   const getIconForRoute = (routePath: string) => {

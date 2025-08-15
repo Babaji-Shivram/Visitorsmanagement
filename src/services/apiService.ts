@@ -1,12 +1,17 @@
-// Get the server IP from environment or use localhost as fallback
+// Controllers are routed as "api/[controller]"
+// Handle different deployment scenarios for API routing
 const getApiBaseUrl = () => {
-  // For production, you can set this via environment variable
-  // For development, it will try to detect the server IP
-  const serverIP = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? 'localhost' 
-    : window.location.hostname;
+  const isLocalhost = window.location.hostname === 'localhost' || 
+                     window.location.hostname.startsWith('127.0') ||
+                     window.location.hostname.startsWith('192.168');
   
-  return `http://${serverIP}:9524/api`;
+  if (isLocalhost) {
+    return '/api';
+  }
+  
+  // For production, check if we're getting double API paths
+  // If so, use empty string; otherwise use /api
+  return '/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -65,6 +70,17 @@ interface VisitorRegistration {
   idProofType?: string;
   idProofNumber?: string;
   photoUrl?: string;
+  customFields?: { [key: string]: string };
+}
+
+interface ReturningVisitorData {
+  fullName: string;
+  email?: string;
+  companyName?: string;
+  idProofType?: string;
+  idProofNumber?: string;
+  isReturningVisitor: boolean;
+  lastVisitDate: string;
 }
 
 interface VisitorDto {
@@ -105,9 +121,64 @@ interface VisitorStatsDto {
   checkedOut: number;
 }
 
+interface CustomField {
+  id: number;
+  name: string;
+  type: 'text' | 'email' | 'number' | 'select' | 'multiselect' | 'textarea' | 'date' | 'checkbox';
+  label: string;
+  placeholder?: string;
+  required: boolean;
+  options?: string[];
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface LocationSettings {
+  id: number;
+  locationId?: number;
+  locationName?: string;
+  purposeOfVisitOptions: string[];
+  idTypeOptions: string[];
+  isPhotoMandatory: boolean;
+  customFields: CustomField[];
+  enabledFields: {
+    email: boolean;
+    companyName: boolean;
+    idProof: boolean;
+    photo: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
 class ApiService {
   private getAuthToken(): string | null {
     return localStorage.getItem('token');
+  }
+
+  // Helper function to convert API response (PascalCase) to frontend format (camelCase)
+  private convertApiResponseToFrontend(apiData: any): LocationSettings | null {
+    if (!apiData) return null;
+    
+    return {
+      id: apiData.id || apiData.Id || 0,
+      locationId: apiData.locationId || apiData.LocationId,
+      locationName: apiData.locationName || apiData.LocationName,
+      purposeOfVisitOptions: apiData.purposeOfVisitOptions || apiData.PurposeOfVisitOptions || [],
+      idTypeOptions: apiData.idTypeOptions || apiData.IdTypeOptions || [],
+      isPhotoMandatory: apiData.isPhotoMandatory ?? apiData.IsPhotoMandatory ?? false,
+      customFields: apiData.customFields || apiData.CustomFields || [],
+      enabledFields: {
+        email: apiData.enabledFields?.email ?? apiData.EnabledFields?.Email ?? false,
+        companyName: apiData.enabledFields?.companyName ?? apiData.EnabledFields?.CompanyName ?? false,
+        idProof: apiData.enabledFields?.idProof ?? apiData.EnabledFields?.IdProof ?? false,
+        photo: apiData.enabledFields?.photo ?? apiData.EnabledFields?.Photo ?? false
+      },
+      createdAt: apiData.createdAt || apiData.CreatedAt || new Date().toISOString(),
+      updatedAt: apiData.updatedAt || apiData.UpdatedAt || new Date().toISOString()
+    };
   }
 
   private async makeRequest<T = any>(
@@ -126,17 +197,24 @@ class ApiService {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      console.log(`🔍 Making request to: ${API_BASE_URL}${endpoint}`, { method: options.method || 'GET', headers });
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         ...options,
         headers,
       });
 
+      console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`❌ HTTP error! status: ${response.status}, body: ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
       }
 
       // Handle responses with no content (204 No Content)
       if (response.status === 204 || response.headers.get('content-length') === '0') {
+        console.log(`✅ Success with no content (${response.status})`);
         return { success: true, data: null as T };
       }
 
@@ -144,13 +222,15 @@ class ApiService {
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
         const data = await response.json();
+        console.log(`✅ Success with JSON data:`, data);
         return { success: true, data };
       } else {
         // If no JSON content, return success with null data
+        console.log(`✅ Success with non-JSON content`);
         return { success: true, data: null as T };
       }
     } catch (error) {
-      console.error('API request failed:', error);
+      console.error('❌ API request failed:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
@@ -178,6 +258,81 @@ class ApiService {
     return response.success && response.data ? response.data : [];
   }
 
+  async getLocationSettings(locationId?: number | null): Promise<LocationSettings | null> {
+    try {
+      const url = locationId 
+        ? `/settings?locationId=${locationId}` 
+        : '/settings'; // Global settings when no locationId
+      const response = await this.makeRequest<any>(url);
+      
+      if (response.success && response.data) {
+        return this.convertApiResponseToFrontend(response.data);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting location settings:', error);
+      return null;
+    }
+  }
+
+  async updateLocationSettings(locationId: number | undefined, settings: any): Promise<LocationSettings | null> {
+    try {
+      const url = locationId 
+        ? `/settings?locationId=${locationId}` 
+        : '/settings'; // Global settings when no locationId
+      
+      // Convert camelCase to PascalCase for API compatibility and handle all settings types
+      const apiSettings: any = {};
+
+      // Form Configuration settings
+      if (settings.purposeOfVisitOptions) apiSettings.purposeOfVisitOptions = settings.purposeOfVisitOptions;
+      if (settings.idTypeOptions) apiSettings.idTypeOptions = settings.idTypeOptions;
+      if (typeof settings.isPhotoMandatory === 'boolean') apiSettings.isPhotoMandatory = settings.isPhotoMandatory;
+      if (settings.customFields) apiSettings.customFields = settings.customFields;
+      
+      if (settings.enabledFields) {
+        apiSettings.enabledFields = {
+          Email: settings.enabledFields.email,
+          CompanyName: settings.enabledFields.companyName,
+          IdProof: settings.enabledFields.idProof,
+          Photo: settings.enabledFields.photo,
+          VehicleNumber: settings.enabledFields.vehicleNumber,
+          EmergencyContact: settings.enabledFields.emergencyContact
+        };
+      }
+
+      // Notification settings
+      if (typeof settings.enableEmailNotifications === 'boolean') apiSettings.enableEmailNotifications = settings.enableEmailNotifications;
+      if (typeof settings.enableSMSNotifications === 'boolean') apiSettings.enableSMSNotifications = settings.enableSMSNotifications;
+      if (typeof settings.enableCheckInReminders === 'boolean') apiSettings.enableCheckInReminders = settings.enableCheckInReminders;
+      if (settings.reminderTimeBeforeVisit) apiSettings.reminderTimeBeforeVisit = settings.reminderTimeBeforeVisit;
+
+      // Security & Access settings
+      if (typeof settings.requireApprovalForAllVisits === 'boolean') apiSettings.requireApprovalForAllVisits = settings.requireApprovalForAllVisits;
+      if (typeof settings.autoApprovalEnabled === 'boolean') apiSettings.autoApprovalEnabled = settings.autoApprovalEnabled;
+      if (typeof settings.allowWalkIns === 'boolean') apiSettings.allowWalkIns = settings.allowWalkIns;
+      if (settings.dataRetentionDays) apiSettings.dataRetentionDays = settings.dataRetentionDays;
+      if (typeof settings.enableAuditLogs === 'boolean') apiSettings.enableAuditLogs = settings.enableAuditLogs;
+
+      // System settings
+      if (settings.maxVisitDuration) apiSettings.maxVisitDuration = settings.maxVisitDuration;
+      
+      // Send settings directly as expected by the API
+      const response = await this.makeRequest<any>(url, {
+        method: 'PUT',
+        body: JSON.stringify(apiSettings),
+      });
+      
+      if (response.success && response.data) {
+        return this.convertApiResponseToFrontend(response.data);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error updating location settings:', error);
+      return null;
+    }
+  }
+
   // Staff endpoints
   async getStaffByLocation(locationId: number): Promise<StaffMember[]> {
     const response = await this.makeRequest<StaffMember[]>(`/staff/location/${locationId}`);
@@ -191,11 +346,18 @@ class ApiService {
 
   // Visitor endpoints
   async registerVisitor(visitor: VisitorRegistration): Promise<boolean> {
-    const response = await this.makeRequest(`/visitors`, {
-      method: 'POST',
-      body: JSON.stringify(visitor),
-    });
-    return response.success;
+    try {
+      console.log('🚀 Registering visitor:', visitor);
+      const response = await this.makeRequest(`/visitors`, {
+        method: 'POST',
+        body: JSON.stringify(visitor),
+      });
+      console.log('📡 Registration response:', response);
+      return response.success;
+    } catch (error) {
+      console.error('❌ Registration error:', error);
+      throw error;
+    }
   }
 
   async getVisitors(locationId?: number, date?: string, status?: string): Promise<VisitorDto[]> {
@@ -220,6 +382,26 @@ class ApiService {
     return response.success && response.data ? response.data : null;
   }
 
+  async getVisitorByPhoneNumber(phoneNumber: string): Promise<ReturningVisitorData | null> {
+    if (!phoneNumber) return null;
+    
+    try {
+      console.log(`🔍 Checking for returning visitor with phone: ${phoneNumber}`);
+      const response = await this.makeRequest<ReturningVisitorData>(`/visitors/by-phone/${encodeURIComponent(phoneNumber)}`);
+      
+      if (response.success && response.data) {
+        console.log('✅ Found returning visitor data:', response.data);
+        return response.data;
+      } else {
+        console.log('📱 No previous visitor found with this phone number');
+        return null;
+      }
+    } catch (error) {
+      console.log('📱 Phone number check failed (likely new visitor):', error);
+      return null;
+    }
+  }
+
   async getVisitorsByStaff(staffName: string, status?: string): Promise<VisitorDto[]> {
     const params = status ? `?status=${status}` : '';
     const response = await this.makeRequest<VisitorDto[]>(`/visitors/staff/${encodeURIComponent(staffName)}${params}`);
@@ -237,34 +419,12 @@ class ApiService {
     return response.success && response.data ? response.data : null;
   }
 
-  async getVisitorById(id: number): Promise<VisitorDto | null> {
-    const response = await this.makeRequest(`/visitors/${id}`, { method: 'GET' });
-    
-    if (response.success && response.data) {
-      return response.data;
-    }
-    
-    return null;
-  }
-
   async updateVisitorStatus(id: number, status: string, notes?: string): Promise<boolean> {
-    // Convert frontend status strings to backend enum values
-    const statusMapping: { [key: string]: number } = {
-      'awaiting_approval': 1,
-      'approved': 2,
-      'rejected': 3,
-      'checked_in': 4,
-      'checked_out': 5,
-      'rescheduled': 6
-    };
-
-    const statusValue = statusMapping[status] || statusMapping['awaiting_approval'];
-    
-    console.log(`🔄 Updating visitor ${id} status from '${status}' to enum value ${statusValue}`, { id, status, statusValue, notes });
+    console.log(`🔄 Updating visitor ${id} status to '${status}'`, { id, status, notes });
     
     const response = await this.makeRequest(`/visitors/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status: statusValue, notes }),
+      body: JSON.stringify({ status: status, notes }),
     });
     
     console.log(`📡 Update visitor status response:`, response);
@@ -285,6 +445,29 @@ class ApiService {
     return response.success;
   }
 
+  async updateVisitorAssignment(id: number, newWhomToMeet: string): Promise<boolean> {
+    const response = await this.makeRequest(`/visitors/${id}/assignment`, {
+      method: 'PUT',
+      body: JSON.stringify(newWhomToMeet),
+    });
+    return response.success;
+  }
+
+  async rescheduleVisitor(id: number, newDateTime: string): Promise<boolean> {
+    try {
+      const response = await this.makeRequest<{ message: string }>(`/visitors/${id}/reschedule`, {
+        method: 'PUT',
+        body: JSON.stringify({ dateTime: newDateTime }),
+      });
+      
+      console.log('✅ Visitor rescheduled successfully:', response);
+      return response.success;
+    } catch (error) {
+      console.error('❌ Error rescheduling visitor:', error);
+      return false;
+    }
+  }
+
   async deleteVisitor(id: number): Promise<boolean> {
     const response = await this.makeRequest(`/visitors/${id}`, {
       method: 'DELETE',
@@ -294,4 +477,6 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
-export type { Location, StaffMember, VisitorRegistration, VisitorDto, UpdateVisitorStatusDto, VisitorStatsDto };
+export type { Location, StaffMember, VisitorRegistration, VisitorDto, UpdateVisitorStatusDto, VisitorStatsDto, CustomField, LocationSettings };
+
+

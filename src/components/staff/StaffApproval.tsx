@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useVisitor } from '../../contexts/VisitorContext';
 import { useAuth } from '../../contexts/AuthContext';
+import ConfirmationDialog from '../common/ConfirmationDialog';
 import { Check, X, Clock, User, Phone, Building, MessageSquare, Calendar, RefreshCw, UserCheck } from 'lucide-react';
 
 const StaffApproval: React.FC = () => {
-  const { visitors, updateVisitorStatus } = useVisitor();
+  const { visitors, updateVisitorStatus, refreshVisitors, isLoading } = useVisitor();
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState<'pending' | 'all'>('pending');
   const [actioningVisitor, setActioningVisitor] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [rescheduleModal, setRescheduleModal] = useState<{
     isOpen: boolean;
     visitorId: string | null;
@@ -24,11 +26,32 @@ const StaffApproval: React.FC = () => {
     newTime: ''
   });
 
+  const [rejectConfirmation, setRejectConfirmation] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    isLoading: false
+  });
+
   const pendingVisitors = visitors.filter(v => 
     v.status === 'awaiting_approval' && v.whomToMeet === user?.name
   );
   
   const allMyVisitors = visitors.filter(v => v.whomToMeet === user?.name);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshVisitors();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleAction = async (visitorId: string, action: 'approved' | 'rejected' | 'rescheduled') => {
     setActioningVisitor(visitorId);
@@ -97,6 +120,54 @@ const StaffApproval: React.FC = () => {
     }
   };
 
+  // Handle reject visitor confirmation
+  const handleRejectClick = (visitor: any) => {
+    setRejectConfirmation({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      isLoading: false
+    });
+  };
+
+  const handleRejectConfirm = async () => {
+    if (!rejectConfirmation.visitorId) return;
+    
+    setRejectConfirmation(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      const success = await updateVisitorStatus(rejectConfirmation.visitorId, 'rejected');
+      if (success) {
+        console.log(`✅ Successfully rejected visitor ${rejectConfirmation.visitorId}`);
+        setRejectConfirmation({
+          isOpen: false,
+          visitorId: null,
+          visitorName: '',
+          isLoading: false
+        });
+      } else {
+        console.error(`❌ Failed to reject visitor ${rejectConfirmation.visitorId}`);
+        alert('Failed to reject visitor. Please try again.');
+        setRejectConfirmation(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      console.error('Error rejecting visitor:', error);
+      alert('An error occurred while rejecting the visitor. Please try again.');
+      setRejectConfirmation(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleRejectCancel = () => {
+    if (!rejectConfirmation.isLoading) {
+      setRejectConfirmation({
+        isOpen: false,
+        visitorId: null,
+        visitorName: '',
+        isLoading: false
+      });
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       awaiting_approval: { color: 'bg-yellow-100 text-yellow-800', text: 'Awaiting Approval' },
@@ -130,9 +201,19 @@ const StaffApproval: React.FC = () => {
                 <p className="text-blue-100 opacity-80">Review and manage your visitor requests</p>
               </div>
             </div>
-            <div className="bg-white/20 rounded-lg px-4 py-2 text-white text-center">
-              <div className="text-2xl font-bold">{pendingVisitors.length}</div>
-              <div className="text-sm text-indigo-100">Pending Approval</div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg transition duration-200 flex items-center disabled:opacity-50"
+                title="Refresh visitor data"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+              <div className="bg-white/20 rounded-lg px-4 py-2 text-white text-center">
+                <div className="text-2xl font-bold">{pendingVisitors.length}</div>
+                <div className="text-sm text-indigo-100">Pending Approval</div>
+              </div>
             </div>
           </div>
         </div>
@@ -164,6 +245,19 @@ const StaffApproval: React.FC = () => {
         </div>
 
         <div className="p-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-sm text-gray-600">Real-time updates active</span>
+            </div>
+            {isLoading && (
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Loading...</span>
+              </div>
+            )}
+          </div>
+          
           {displayVisitors.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -244,7 +338,7 @@ const StaffApproval: React.FC = () => {
                           </button>
                           
                           <button
-                            onClick={() => handleAction(visitor.id, 'rejected')}
+                            onClick={() => handleRejectClick(visitor)}
                             disabled={actioningVisitor === visitor.id}
                             className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
                           >
@@ -355,6 +449,19 @@ const StaffApproval: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Reject Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={rejectConfirmation.isOpen}
+        title="Reject Visitor"
+        message={`Are you sure you want to reject "${rejectConfirmation.visitorName}"? This action will deny their visit request and send them a rejection notification.`}
+        confirmText="Reject Visitor"
+        cancelText="Cancel"
+        type="warning"
+        onConfirm={handleRejectConfirm}
+        onCancel={handleRejectCancel}
+        isLoading={rejectConfirmation.isLoading}
+      />
     </div>
   );
 };

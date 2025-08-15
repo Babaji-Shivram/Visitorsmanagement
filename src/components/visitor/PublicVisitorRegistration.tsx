@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSettings } from '../../contexts/SettingsContext';
 import { UserPlus, Phone, Mail, Building, MessageSquare, CreditCard, Camera, Check, X, Upload } from 'lucide-react';
-import { apiService, type Location, type StaffMember } from '../../services/apiService';
+import { apiService, type Location, type StaffMember, type LocationSettings } from '../../services/apiService';
+import DynamicFormField from '../common/DynamicFormField';
 
 const PublicVisitorRegistration: React.FC = () => {
   const { locationUrl } = useParams<{ locationUrl: string }>();
@@ -14,9 +15,11 @@ const PublicVisitorRegistration: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [location, setLocation] = useState<Location | null>(null);
+  const [locationSettings, setLocationSettings] = useState<LocationSettings | null>(null);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [customFieldValues, setCustomFieldValues] = useState<{ [key: string]: string }>({});
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -35,26 +38,71 @@ const PublicVisitorRegistration: React.FC = () => {
         setIsLoading(true);
         setError(null);
         
-        console.log('Loading location with URL:', locationUrl);
-        
         // Get location by URL
         const locationData = await apiService.getLocationByUrl(locationUrl);
-        console.log('Location data received:', locationData);
         
         if (locationData) {
           setLocation(locationData);
           
+          // Get location settings for custom fields
+          console.log('📋 PublicVisitor - Loading location settings for ID:', locationData.id);
+          let settingsData = await apiService.getLocationSettings(locationData.id);
+          console.log('📋 PublicVisitor - Location-specific settings received:', settingsData);
+          console.log('📋 PublicVisitor - Location settings custom fields count:', settingsData?.customFields?.length || 0);
+          
+          // If no location-specific settings or no custom fields, try global settings
+          if (!settingsData || !settingsData.customFields || settingsData.customFields.length === 0) {
+            console.log('🔍 PublicVisitor - No location-specific custom fields, trying global settings...');
+            const globalSettings = await apiService.getLocationSettings();
+            console.log('🌐 PublicVisitor - Global settings received:', globalSettings);
+            console.log('🌐 PublicVisitor - Global settings custom fields:', {
+              hasCustomFields: !!globalSettings?.customFields,
+              customFieldsCount: globalSettings?.customFields?.length || 0,
+              customFieldsRawData: globalSettings?.customFields,
+              customFields: globalSettings?.customFields?.map(cf => ({ 
+                id: cf.id, 
+                name: cf.name, 
+                label: cf.label, 
+                type: cf.type, 
+                isActive: cf.isActive 
+              })) || []
+            });
+            
+            if (globalSettings && globalSettings.customFields && globalSettings.customFields.length > 0) {
+              console.log('✅ PublicVisitor - Found global custom fields:', globalSettings.customFields);
+              // Merge global custom fields with location settings
+              settingsData = settingsData ? {
+                ...settingsData,
+                customFields: globalSettings.customFields
+              } : globalSettings;
+              console.log('✅ PublicVisitor - Using global custom fields:', {
+                totalCustomFields: settingsData.customFields.length,
+                activeCustomFields: settingsData.customFields.filter(cf => cf.isActive).length,
+                fields: settingsData.customFields.map(cf => ({ 
+                  id: cf.id, 
+                  name: cf.name, 
+                  label: cf.label, 
+                  type: cf.type, 
+                  isActive: cf.isActive 
+                }))
+              });
+            } else {
+              console.log('❌ PublicVisitor - No global custom fields found or empty array');
+            }
+          } else {
+            console.log('✅ PublicVisitor - Using location-specific custom fields:', {
+              customFieldsCount: settingsData.customFields.length,
+              fields: settingsData.customFields.map(cf => ({ id: cf.id, name: cf.name, label: cf.label, type: cf.type }))
+            });
+          }
+          
+          setLocationSettings(settingsData);
+          
           // Get staff for this location
           const locationStaff = await apiService.getStaffByLocation(locationData.id);
-          console.log('Staff data received:', locationStaff);
           
-          // If no staff for this location, get all active staff
-          if (locationStaff.length === 0) {
-            const allActiveStaff = await apiService.getActiveStaff();
-            setStaffMembers(allActiveStaff);
-          } else {
-            setStaffMembers(locationStaff);
-          }
+          // Always use location-specific staff only, don't fall back to all staff
+          setStaffMembers(locationStaff);
         } else {
           setError(`No location found with URL: ${locationUrl}`);
         }
@@ -79,6 +127,32 @@ const PublicVisitorRegistration: React.FC = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Listen for settings updates from admin FormBuilder
+  useEffect(() => {
+    const handleSettingsUpdate = (event: CustomEvent) => {
+      const { locationId: updatedLocationId, settings: updatedSettings } = event.detail;
+      
+      // If this update is for our location or global settings, reload location settings
+      if (!updatedLocationId || (location && updatedLocationId === location.id)) {
+        setLocationSettings(prevSettings => {
+          if (prevSettings) {
+            return {
+              ...prevSettings,
+              enabledFields: updatedSettings.enabledFields || prevSettings.enabledFields,
+              isPhotoMandatory: updatedSettings.isPhotoMandatory ?? prevSettings.isPhotoMandatory,
+              purposeOfVisitOptions: updatedSettings.purposeOfVisitOptions || prevSettings.purposeOfVisitOptions,
+              idTypeOptions: updatedSettings.idTypeOptions || prevSettings.idTypeOptions
+            };
+          }
+          return prevSettings;
+        });
+      }
+    };
+
+    window.addEventListener('formBuilderSettingsUpdated', handleSettingsUpdate as EventListener);
+    return () => window.removeEventListener('formBuilderSettingsUpdated', handleSettingsUpdate as EventListener);
+  }, [location]);
+
   const [formData, setFormData] = useState({
     fullName: '',
     phoneNumber: '',
@@ -90,8 +164,72 @@ const PublicVisitorRegistration: React.FC = () => {
     idProofNumber: '',
   });
 
+  // State for returning visitor feature
+  const [isReturningVisitor, setIsReturningVisitor] = useState(false);
+  const [returningVisitorInfo, setReturningVisitorInfo] = useState<{
+    lastVisitDate: string;
+    isChecking: boolean;
+  } | null>(null);
+
+  // Handle phone number changes with returning visitor check
+  const handlePhoneNumberChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const phoneNumber = e.target.value;
+    
+    // Update form data first
+    setFormData(prev => ({
+      ...prev,
+      phoneNumber
+    }));
+
+    // Reset returning visitor state
+    setIsReturningVisitor(false);
+    setReturningVisitorInfo(null);
+
+    // Check for returning visitor if phone number is complete (10+ digits)
+    if (phoneNumber.replace(/\D/g, '').length >= 10) {
+      setReturningVisitorInfo({ lastVisitDate: '', isChecking: true });
+      
+      try {
+        console.log('🔍 Checking for returning visitor with phone:', phoneNumber);
+        const returningData = await apiService.getVisitorByPhoneNumber(phoneNumber);
+        
+        if (returningData) {
+          console.log('✅ Found returning visitor:', returningData);
+          setIsReturningVisitor(true);
+          setReturningVisitorInfo({ 
+            lastVisitDate: returningData.lastVisitDate, 
+            isChecking: false 
+          });
+          
+          // Prefill form data (excluding purpose and whom to meet as requested)
+          setFormData(prev => ({
+            ...prev,
+            fullName: returningData.fullName || prev.fullName,
+            email: returningData.email || prev.email,
+            companyName: returningData.companyName || prev.companyName,
+            idProofType: returningData.idProofType || prev.idProofType,
+            idProofNumber: returningData.idProofNumber || prev.idProofNumber,
+          }));
+        } else {
+          console.log('📱 New visitor - no previous records found');
+          setReturningVisitorInfo(null);
+        }
+      } catch (error) {
+        console.log('📱 Error checking for returning visitor:', error);
+        setReturningVisitorInfo(null);
+      }
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    
+    // Use special handler for phone number
+    if (name === 'phoneNumber') {
+      handlePhoneNumberChange(e as React.ChangeEvent<HTMLInputElement>);
+      return;
+    }
+    
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -101,35 +239,72 @@ const PublicVisitorRegistration: React.FC = () => {
   const startCamera = useCallback(async () => {
     try {
       console.log('Starting camera with mobile:', isMobile);
-      
-      // First check if getUserMedia is available
+
+      // Ensure Camera API availability
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not supported in this browser');
       }
 
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: isMobile ? 'user' : 'environment',
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 }
+      // Optional: quick device presence check to provide clearer error
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const hasVideoInput = devices.some(d => d.kind === 'videoinput');
+        if (!hasVideoInput) {
+          throw new Error('No camera found on this device');
         }
-      };
+      } catch (e) {
+        console.warn('enumerateDevices failed or unavailable, continuing...', e);
+      }
 
-      console.log('Requesting camera with constraints:', constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('Camera stream obtained:', stream);
-      
+      // Try a cascade of constraints for maximum compatibility
+      const attempts: MediaStreamConstraints[] = [
+        {
+          video: {
+            facingMode: isMobile ? 'user' : 'user',
+            width: { ideal: 1280, min: 640 },
+            height: { ideal: 720, min: 480 }
+          }
+        },
+        {
+          video: {
+            facingMode: isMobile ? 'environment' : undefined,
+          }
+        },
+        { video: true }
+      ];
+
+      let stream: MediaStream | null = null;
+      let lastError: unknown = null;
+      for (const c of attempts) {
+        try {
+          console.log('Requesting camera with constraints:', c);
+          stream = await navigator.mediaDevices.getUserMedia(c);
+          if (stream) break;
+        } catch (err) {
+          lastError = err;
+          console.warn('getUserMedia attempt failed, trying next...', err);
+        }
+      }
+
+      if (!stream) {
+        throw lastError instanceof Error ? lastError : new Error('Failed to access camera with any constraints');
+      }
+
+      // Stop any previous stream just in case
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
       streamRef.current = stream;
-      
+
       // Show camera modal first
       setShowCamera(true);
       setVideoReady(false);
-      
+
       // Wait a bit for the modal to render, then set the video source
       setTimeout(() => {
-        if (videoRef.current && stream) {
+        if (videoRef.current && streamRef.current) {
           console.log('Setting video source');
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = streamRef.current;
           videoRef.current.play().catch(console.error);
         }
       }, 100);
@@ -142,7 +317,13 @@ const PublicVisitorRegistration: React.FC = () => {
     } catch (error) {
       console.error('Error accessing camera:', error);
       if (error instanceof Error) {
-        alert(`Unable to access camera: ${error.message}`);
+        // Provide more actionable tips based on error types
+        const msg = error.name === 'NotAllowedError' || /Permission/i.test(error.message)
+          ? 'Camera permission denied. Please allow camera access in your browser settings and try again.'
+          : error.name === 'NotFoundError'
+            ? 'No camera found. If you are on a desktop without a webcam, use Upload Photo instead.'
+            : error.message;
+        alert(`Unable to access camera: ${msg}`);
       } else {
         alert('Unable to access camera. Please check permissions and try again.');
       }
@@ -227,6 +408,18 @@ const PublicVisitorRegistration: React.FC = () => {
       return;
     }
 
+    // Validate required custom fields
+    if (locationSettings?.customFields) {
+      const requiredCustomFields = locationSettings.customFields.filter(cf => cf.isActive && cf.required);
+      for (const field of requiredCustomFields) {
+        if (!customFieldValues[field.name] || customFieldValues[field.name].trim() === '') {
+          alert(`Please fill in the required field: ${field.label}`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    }
+
     if (!location) {
       alert('Location information not available');
       setIsSubmitting(false);
@@ -246,6 +439,7 @@ const PublicVisitorRegistration: React.FC = () => {
         idProofType: formData.idProofType || undefined,
         idProofNumber: formData.idProofNumber || undefined,
         photoUrl: capturedPhoto || undefined,
+        customFields: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
       };
 
       const success = await apiService.registerVisitor(visitorData);
@@ -286,9 +480,6 @@ const PublicVisitorRegistration: React.FC = () => {
           <div className="text-red-600 text-xl mb-4">Location Not Found</div>
           <div className="text-gray-600 mb-4">
             {error || `The requested location URL "${locationUrl}" is not valid.`}
-          </div>
-          <div className="text-sm text-gray-500">
-            Debug: URL parameter = {locationUrl || 'undefined'}
           </div>
         </div>
       </div>
@@ -405,6 +596,48 @@ const PublicVisitorRegistration: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="p-8 space-y-6">
+            {/* Phone Number First - For Returning Visitor Detection */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Phone className="inline w-4 h-4 mr-1" />
+                  Phone Number *
+                </label>
+                <input
+                  type="tel"
+                  name="phoneNumber"
+                  value={formData.phoneNumber}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                  placeholder="+91 98765 43210"
+                  required
+                />
+                
+                {/* Returning Visitor Indicator */}
+                {returningVisitorInfo?.isChecking && (
+                  <div className="mt-2 flex items-center text-blue-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    <span className="text-sm">Checking for previous visits...</span>
+                  </div>
+                )}
+                
+                {isReturningVisitor && returningVisitorInfo && !returningVisitorInfo.isChecking && (
+                  <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center">
+                      <Check className="w-5 h-5 text-green-600 mr-2" />
+                      <div>
+                        <p className="text-sm font-medium text-green-800">Welcome back!</p>
+                        <p className="text-xs text-green-600">
+                          Last visit: {new Date(returningVisitorInfo.lastVisitDate).toLocaleDateString()}. 
+                          Your details have been pre-filled.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Personal Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -422,24 +655,7 @@ const PublicVisitorRegistration: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Phone className="inline w-4 h-4 mr-1" />
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  name="phoneNumber"
-                  value={formData.phoneNumber}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                  placeholder="+91 98765 43210"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {(locationSettings ? locationSettings.enabledFields.email : settings.enabledFields.email) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <Mail className="inline w-4 h-4 mr-1" />
@@ -454,7 +670,11 @@ const PublicVisitorRegistration: React.FC = () => {
                   placeholder="your.email@example.com"
                 />
               </div>
+              )}
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {(locationSettings ? locationSettings.enabledFields.companyName : settings.enabledFields.companyName) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <Building className="inline w-4 h-4 mr-1" />
@@ -469,6 +689,7 @@ const PublicVisitorRegistration: React.FC = () => {
                   placeholder="Your company"
                 />
               </div>
+              )}
             </div>
 
             {/* Visit Information */}
@@ -526,7 +747,7 @@ const PublicVisitorRegistration: React.FC = () => {
             </div>
 
             {/* ID Proof Information */}
-            {settings.enabledFields.idProof && (
+            {(locationSettings ? locationSettings.enabledFields.idProof : settings.enabledFields.idProof) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -562,7 +783,47 @@ const PublicVisitorRegistration: React.FC = () => {
             </div>
             )}
 
+            {/* Custom Fields Section */}
+            {locationSettings?.customFields && locationSettings.customFields.filter(cf => cf.isActive).length > 0 && (
+              <div className="space-y-6">
+                <h3 className="text-lg font-medium text-gray-800 border-b border-gray-200 pb-2">
+                  Additional Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {locationSettings.customFields
+                    .filter(cf => cf.isActive)
+                    .sort((a, b) => a.order - b.order)
+                    .map((field) => {
+                      console.log('🎯 PublicVisitor - Rendering field:', { 
+                        id: field.id, 
+                        name: field.name, 
+                        label: field.label, 
+                        type: field.type, 
+                        isActive: field.isActive 
+                      });
+                      return (
+                        <div key={field.id} className={field.type === 'textarea' ? 'md:col-span-2' : ''}>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {field.label} {field.required && '*'}
+                          </label>
+                          <DynamicFormField
+                            field={field}
+                            value={customFieldValues[field.name] || ''}
+                            onChange={(value) => setCustomFieldValues(prev => ({
+                              ...prev,
+                              [field.name]: value
+                            }))}
+                          />
+                        </div>
+                      );
+                    })
+                  }
+                </div>
+              </div>
+            )}
+
             {/* Photo Section */}
+            {(locationSettings ? locationSettings.enabledFields.photo : settings.enabledFields.photo) && (
             <div className="text-center">
               <label className="block text-sm font-medium text-gray-700 mb-4">Visitor Photo (Optional)</label>
               {capturedPhoto ? (
@@ -611,12 +872,15 @@ const PublicVisitorRegistration: React.FC = () => {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    // Hint mobile browsers to open the camera directly
+                    capture={isMobile ? 'user' : undefined}
                     onChange={handleFileUpload}
                     className="hidden"
                   />
                 </div>
               )}
             </div>
+            )}
 
             {/* Current Date and Time Display */}
             <div className="bg-gray-50 rounded-lg p-4">

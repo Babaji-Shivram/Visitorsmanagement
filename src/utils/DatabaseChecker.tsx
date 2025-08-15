@@ -21,10 +21,7 @@ export const DatabaseChecker: React.FC = () => {
     
     // Try different API endpoints
     const apiUrls = [
-      'http://localhost:5000/api/staff',
-      'http://localhost:5001/api/staff',
-      'https://localhost:7000/api/staff',
-      'https://localhost:7001/api/staff'
+      '/api/staff'
     ];
 
     for (const url of apiUrls) {

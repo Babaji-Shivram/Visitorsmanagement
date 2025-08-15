@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useStaff } from '../../contexts/StaffContext';
 import { useLocation } from '../../contexts/LocationContext';
+import ConfirmationDialog from '../common/ConfirmationDialog';
 import { 
   Users, 
   Plus, 
@@ -35,6 +36,17 @@ const StaffManagement: React.FC = () => {
     errors: string[];
     total: number;
   } | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    staffId: string | null;
+    staffName: string;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    staffId: null,
+    staffName: '',
+    isLoading: false
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   
@@ -117,6 +129,45 @@ const StaffManagement: React.FC = () => {
     setShowAddForm(false);
     setEditingStaff(null);
     resetForm();
+  };
+
+  const handleDeleteClick = (staff: any) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      staffId: staff.id,
+      staffName: `${staff.firstName} ${staff.lastName}`,
+      isLoading: false
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmation.staffId) return;
+    
+    setDeleteConfirmation(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      await deleteStaffMember(deleteConfirmation.staffId);
+      setDeleteConfirmation({
+        isOpen: false,
+        staffId: null,
+        staffName: '',
+        isLoading: false
+      });
+    } catch (error) {
+      console.error('Failed to delete staff member:', error);
+      setDeleteConfirmation(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    if (!deleteConfirmation.isLoading) {
+      setDeleteConfirmation({
+        isOpen: false,
+        staffId: null,
+        staffName: '',
+        isLoading: false
+      });
+    }
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -844,7 +895,7 @@ const StaffManagement: React.FC = () => {
                       Edit
                     </button>
                     <button
-                      onClick={() => deleteStaffMember(staff.id)}
+                      onClick={() => handleDeleteClick(staff)}
                       className="flex-1 flex items-center justify-center px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition duration-200"
                     >
                       <Trash2 className="w-4 h-4 mr-1" />
@@ -866,6 +917,19 @@ const StaffManagement: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Staff Member"
+        message={`Are you sure you want to delete "${deleteConfirmation.staffName}"? This action cannot be undone and will remove all their access to the system.`}
+        confirmText="Delete Staff Member"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        isLoading={deleteConfirmation.isLoading}
+      />
     </div>
   );
 };

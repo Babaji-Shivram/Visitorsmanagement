@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useAuth } from './AuthContext';
 
 export interface StaffMember {
   id: string;
@@ -47,7 +46,7 @@ export const useStaff = () => {
 };
 
 // API configuration
-const API_BASE_URL = 'http://localhost:9524/api';
+const API_BASE_URL = '/api';
 
 // Helper function to get auth token
 const getAuthToken = () => {
@@ -60,11 +59,19 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   console.log('🌐 Making API request to:', `${API_BASE_URL}${endpoint}`);
   console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'NO TOKEN');
   
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  // Only add authorization header if we have a token (for write operations)
+  if (token && (options.method === 'POST' || options.method === 'PUT' || options.method === 'DELETE')) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
+      ...headers,
       ...options.headers,
     },
   });
@@ -86,7 +93,6 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { isAuthenticated } = useAuth();
 
   // Load staff members from API only
   const loadStaffMembers = async () => {
@@ -98,24 +104,24 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = await apiRequest('/staff');
       console.log('✅ Loaded staff members from API:', data.length, 'members');
       
-      // Convert API response to our interface format
+      // Convert API response to our interface format with proper null checks
       const mappedStaff = data.map((apiStaff: any) => ({
-        id: apiStaff.id.toString(),
-        firstName: apiStaff.firstName,
-        lastName: apiStaff.lastName,
-        locationId: apiStaff.locationId.toString(),
-        email: apiStaff.email,
+        id: apiStaff.id?.toString() || '',
+        firstName: apiStaff.firstName || '',
+        lastName: apiStaff.lastName || '',
+        locationId: apiStaff.locationId?.toString() || '1', // Default to location 1 if not specified
+        email: apiStaff.email || '',
         password: apiStaff.password || '', // API might not return password
-        mobileNumber: apiStaff.mobileNumber,
-        phoneNumber: apiStaff.phoneNumber,
-        extension: apiStaff.extension,
-        designation: apiStaff.designation,
+        mobileNumber: apiStaff.mobileNumber || apiStaff.phone || '',
+        phoneNumber: apiStaff.phoneNumber || apiStaff.phone || '',
+        extension: apiStaff.extension || '',
+        designation: apiStaff.designation || '',
         role: apiStaff.role || 'staff',
-        photoUrl: apiStaff.photoUrl,
-        isActive: apiStaff.isActive,
+        photoUrl: apiStaff.photoUrl || '',
+        isActive: apiStaff.isActive !== undefined ? apiStaff.isActive : true,
         canLogin: apiStaff.canLogin || false,
-        createdAt: apiStaff.createdAt,
-        updatedAt: apiStaff.updatedAt
+        createdAt: apiStaff.createdAt || new Date().toISOString(),
+        updatedAt: apiStaff.updatedAt || new Date().toISOString()
       }));
       
       setStaffMembers(mappedStaff);
@@ -128,21 +134,11 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Load staff members when authenticated
+  // Load staff members when component mounts (no authentication required for reading)
   useEffect(() => {
-    const token = getAuthToken();
-    console.log('🔑 StaffContext useEffect - authenticated:', isAuthenticated);
-    console.log('🔑 StaffContext useEffect - token available:', !!token);
-    
-    if (isAuthenticated && token) {
-      console.log('🚀 Starting staff members load...');
-      loadStaffMembers();
-    } else {
-      console.log('🔒 Skipping staff load - not authenticated or no token');
-      setStaffMembers([]);
-      setError(null); // Don't show error if just not authenticated yet
-    }
-  }, [isAuthenticated]);
+    console.log('🔑 StaffContext useEffect - loading staff members...');
+    loadStaffMembers();
+  }, []);
 
   const addStaffMember = async (staffData: Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {

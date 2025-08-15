@@ -1,9 +1,10 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { useVisitor } from '../../contexts/VisitorContext';
 import { useLocation } from '../../contexts/LocationContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useStaff } from '../../contexts/StaffContext';
+import { apiService, type LocationSettings } from '../../services/apiService';
 import { UserPlus, Phone, Mail, Building, MessageSquare, Calendar, CreditCard, Camera, Check, MapPin, X, Upload } from 'lucide-react';
 
 const LocationSpecificRegistration: React.FC = () => {
@@ -15,7 +16,7 @@ const LocationSpecificRegistration: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [locationSettings, setLocationSettings] = useState<LocationSettings | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -23,15 +24,43 @@ const LocationSpecificRegistration: React.FC = () => {
 
   const location = locationUrl ? getLocationByUrl(locationUrl) : null;
 
-  // Detect mobile device
-  React.useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+
+  // Load location settings
+  useEffect(() => {
+    const loadLocationSettings = async () => {
+      if (location?.id) {
+        try {
+          const settingsData = await apiService.getLocationSettings(Number(location.id));
+          setLocationSettings(settingsData);
+        } catch (error) {
+          console.error('Failed to load location settings:', error);
+          // Fall back to global settings if location settings fail
+          setLocationSettings(null);
+        }
+      }
     };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+
+    loadLocationSettings();
+  }, [location?.id]);
+
+  // Listen for settings updates
+  useEffect(() => {
+    const handleSettingsUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail?.locationId === location?.id) {
+        setLocationSettings(prevSettings => {
+          if (!prevSettings) return customEvent.detail.settings;
+          return {
+            ...prevSettings,
+            ...customEvent.detail.settings
+          };
+        });
+      }
+    };
+
+    window.addEventListener('locationSettingsUpdated', handleSettingsUpdate);
+    return () => window.removeEventListener('locationSettingsUpdated', handleSettingsUpdate);
+  }, [location?.id]);
 
   // Get staff members for this location, fallback to all active staff if none found
   const locationStaff = location ? getStaffMembersByLocation(location.id) : [];
@@ -68,39 +97,31 @@ const LocationSpecificRegistration: React.FC = () => {
     );
   }
 
-  const purposeOptions = [
-    'Business Meeting',
-    'Interview',
-    'Consultation',
-    'Delivery',
-    'Maintenance',
-    'Training',
-    'Other'
-  ];
+  // purpose options come from settings
 
   const startCamera = useCallback(async () => {
     try {
-      // Enhanced camera constraints for mobile devices
-      const constraints = {
-        video: { 
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          facingMode: 'user', // Front camera for selfies
-          aspectRatio: { ideal: 16/9 }
-        }
-      };
-
-      // Try to get high-quality camera first, fallback to basic if needed
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (error) {
-        // Fallback to basic constraints if high-quality fails
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' }
-        });
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Camera API not supported in this browser');
       }
-      
+      const attempts = [
+        { video: { facingMode: 'user', width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, aspectRatio: { ideal: 16/9 } } },
+        { video: { facingMode: 'user' } },
+        { video: true }
+      ] as MediaStreamConstraints[];
+      let stream: MediaStream | null = null;
+      let lastError: unknown = null;
+      for (const c of attempts) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(c);
+          if (stream) break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if (!stream) {
+        throw lastError instanceof Error ? lastError : new Error('Failed to access camera');
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
@@ -108,10 +129,10 @@ const LocationSpecificRegistration: React.FC = () => {
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      if (errorMessage.includes('NotAllowedError') || errorMessage.includes('Permission denied')) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (/NotAllowed/i.test(message) || /Permission/i.test(message)) {
         alert('Camera access denied. Please allow camera permissions and try again.');
-      } else if (errorMessage.includes('NotFoundError')) {
+      } else if (/NotFound/i.test(message)) {
         alert('No camera found. Please ensure your device has a camera.');
       } else {
         alert('Unable to access camera. Please check that no other app is using the camera and try again.');
@@ -303,7 +324,8 @@ const LocationSpecificRegistration: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           {/* Photo Capture Section */}
-          <div>
+          {(locationSettings ? locationSettings.enabledFields.photo : settings.enabledFields.photo) && (
+            <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Camera className="inline w-4 h-4 mr-1" />
               Visitor Photo {settings.isPhotoMandatory ? '*' : ''}
@@ -342,6 +364,7 @@ const LocationSpecificRegistration: React.FC = () => {
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  capture="user"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
@@ -420,7 +443,8 @@ const LocationSpecificRegistration: React.FC = () => {
                 </p>
               </div>
             )}
-          </div>
+            </div>
+          )}
 
           {/* Personal Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -457,35 +481,39 @@ const LocationSpecificRegistration: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Mail className="inline w-4 h-4 mr-1" />
-                Email Address
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="your.email@example.com"
-              />
-            </div>
+            {(locationSettings ? locationSettings.enabledFields.email : settings.enabledFields.email) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Mail className="inline w-4 h-4 mr-1" />
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                  placeholder="your.email@example.com"
+                />
+              </div>
+            )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Building className="inline w-4 h-4 mr-1" />
-                Company Name
-              </label>
-              <input
-                type="text"
-                name="companyName"
-                value={formData.companyName}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="Your company"
-              />
-            </div>
+            {(locationSettings ? locationSettings.enabledFields.companyName : settings.enabledFields.companyName) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Building className="inline w-4 h-4 mr-1" />
+                  Company Name
+                </label>
+                <input
+                  type="text"
+                  name="companyName"
+                  value={formData.companyName}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                  placeholder="Your company"
+                />
+              </div>
+            )}
           </div>
 
           {/* Visit Information */}
@@ -530,8 +558,14 @@ const LocationSpecificRegistration: React.FC = () => {
             </div>
           </div>
 
-          {/* ID Proof Information */}
-          {settings.enabledFields.idProof && (
+          {(() => {
+            console.log('🔍 LocationSpecificRegistration - Component rendered');
+            console.log('🔍 LocationSpecificRegistration - Settings object:', settings);
+            console.log('🔍 LocationSpecificRegistration - ID Proof enabled:', settings?.enabledFields?.idProof);
+            console.log('🔍 LocationSpecificRegistration - All enabled fields:', settings?.enabledFields);
+            return null;
+          })()}
+          {(locationSettings ? locationSettings.enabledFields.idProof : settings.enabledFields.idProof) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

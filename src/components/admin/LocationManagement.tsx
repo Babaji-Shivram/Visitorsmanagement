@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useLocation } from '../../contexts/LocationContext';
+import { useLocation, Location as LocationType } from '../../contexts/LocationContext';
+import ConfirmationDialog from '../common/ConfirmationDialog';
 import { 
   MapPin, 
   Plus, 
@@ -18,6 +19,17 @@ const LocationManagement: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLocation, setEditingLocation] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    locationId: string | null;
+    locationName: string;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    locationId: null,
+    locationName: '',
+    isLoading: false
+  });
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -29,9 +41,12 @@ const LocationManagement: React.FC = () => {
     e.preventDefault();
     
     if (editingLocation) {
+      console.log('🔄 Updating location:', editingLocation, formData);
       updateLocation(editingLocation, formData);
       setEditingLocation(null);
+      setShowAddForm(false);
     } else {
+      console.log('➕ Adding new location:', formData);
       addLocation(formData);
       setShowAddForm(false);
     }
@@ -44,7 +59,47 @@ const LocationManagement: React.FC = () => {
     });
   };
 
-  const handleEdit = (location: any) => {
+  const handleDeleteClick = (location: LocationType) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      locationId: location.id,
+      locationName: location.name,
+      isLoading: false
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmation.locationId) return;
+    
+    setDeleteConfirmation(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      await deleteLocation(deleteConfirmation.locationId);
+      setDeleteConfirmation({
+        isOpen: false,
+        locationId: null,
+        locationName: '',
+        isLoading: false
+      });
+    } catch (error) {
+      console.error('Failed to delete location:', error);
+      setDeleteConfirmation(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    if (!deleteConfirmation.isLoading) {
+      setDeleteConfirmation({
+        isOpen: false,
+        locationId: null,
+        locationName: '',
+        isLoading: false
+      });
+    }
+  };
+
+  const handleEdit = (location: LocationType) => {
+    console.log('🔧 Edit button clicked for location:', location.id, location.name);
     setFormData({
       name: location.name,
       address: location.address,
@@ -53,6 +108,7 @@ const LocationManagement: React.FC = () => {
     });
     setEditingLocation(location.id);
     setShowAddForm(true);
+    console.log('🔧 Edit form should now be visible, editingLocation:', location.id);
   };
 
   const handleCancel = () => {
@@ -239,7 +295,7 @@ const LocationManagement: React.FC = () => {
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => deleteLocation(location.id)}
+                        onClick={() => handleDeleteClick(location)}
                         className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-200"
                         title="Delete location"
                       >
@@ -327,6 +383,19 @@ const LocationManagement: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Location"
+        message={`Are you sure you want to delete "${deleteConfirmation.locationName}"? This action cannot be undone and may affect visitor registrations associated with this location.`}
+        confirmText="Delete Location"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        isLoading={deleteConfirmation.isLoading}
+      />
     </div>
   );
 };

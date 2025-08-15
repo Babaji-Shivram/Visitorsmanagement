@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Email Approval Demo - Visitor Management System</title>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            margin: 0; 
+            padding: 20px; 
+            background-color: #f8f9fa;
+        }
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .demo-header {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 20px;
+            margin: -20px -20px 20px -20px;
+            border-radius: 10px 10px 0 0;
+            text-align: center;
+        }
+        .email-container { 
+            max-width: 600px; 
+            margin: 20px auto; 
+            background: white; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border: 2px solid #007bff;
+        }
+        .header { 
+            background: linear-gradient(135deg, #007bff, #0056b3); 
+            color: white; 
+            padding: 25px; 
+            text-align: center;
+        }
+        .header h2 { 
+            margin: 0; 
+            font-size: 1.5rem; 
+        }
+        .content { 
+            padding: 30px; 
+        }
+        .visitor-info { 
+            background: #f8f9fa; 
+            border-radius: 8px; 
+            padding: 20px; 
+            margin: 20px 0;
+        }
+        .info-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 15px 0;
+        }
+        .info-table td { 
+            padding: 12px; 
+            border-bottom: 1px solid #e9ecef; 
+            vertical-align: top;
+        }
+        .info-table td:first-child { 
+            font-weight: bold; 
+            color: #495057; 
+            width: 35%; 
+        }
+        .info-table td:last-child { 
+            color: #212529; 
+        }
+        .action-buttons { 
+            text-align: center; 
+            margin: 30px 0; 
+            padding: 25px; 
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef); 
+            border-radius: 8px;
+        }
+        .btn { 
+            display: inline-block; 
+            padding: 15px 30px; 
+            margin: 0 10px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            font-size: 16px; 
+            text-align: center; 
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-approve { 
+            background: linear-gradient(135deg, #28a745, #20c997); 
+            color: white; 
+            box-shadow: 0 4px 15px rgba(40,167,69,0.3);
+        }
+        .btn-approve:hover { 
+            background: linear-gradient(135deg, #218838, #1e7e34); 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40,167,69,0.4);
+        }
+        .btn-reject { 
+            background: linear-gradient(135deg, #dc3545, #c82333); 
+            color: white; 
+            box-shadow: 0 4px 15px rgba(220,53,69,0.3);
+        }
+        .btn-reject:hover { 
+            background: linear-gradient(135deg, #c82333, #a71e2a); 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(220,53,69,0.4);
+        }
+        .status-badge { 
+            background: #ffc107; 
+            color: #212529; 
+            padding: 6px 12px; 
+            border-radius: 20px; 
+            font-weight: bold; 
+            font-size: 0.9rem;
+        }
+        .footer { 
+            background: #f8f9fa; 
+            padding: 20px; 
+            text-align: center; 
+            color: #6c757d; 
+            font-size: 0.9rem; 
+            border-top: 1px solid #e9ecef;
+        }
+        .urgent-notice { 
+            background: #fff3cd; 
+            border: 1px solid #ffeaa7; 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin: 20px 0; 
+            color: #856404;
+        }
+        .quick-info { 
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb); 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin: 20px 0;
+        }
+        .demo-note {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class='demo-container'>
+        <div class='demo-header'>
+            <h1>📧 Email Approval Feature Demo</h1>
+            <p>This is how the staff notification email looks with approve/reject buttons</p>
+        </div>
+
+        <div class='demo-note'>
+            <h3>🎯 Feature Highlights:</h3>
+            <ul>
+                <li>✅ <strong>One-click approval/rejection</strong> directly from email</li>
+                <li>🔒 <strong>Secure token-based authentication</strong> with daily expiration</li>
+                <li>📱 <strong>Mobile-friendly responsive design</strong> for any device</li>
+                <li>🎨 <strong>Professional branded email template</strong> with hover effects</li>
+                <li>📊 <strong>Complete visitor information</strong> in organized table format</li>
+                <li>🔄 <strong>Automated workflow</strong> from registration to confirmation</li>
+            </ul>
+        </div>
+
+        <!-- Email Template Demo -->
+        <div class='email-container'>
+            <div class='header'>
+                <h2>🔔 New Visitor Registration</h2>
+                <p style='margin: 10px 0 0 0; opacity: 0.9;'>Action Required - Awaiting Your Approval</p>
+            </div>
+            
+            <div class='content'>
+                <div class='urgent-notice'>
+                    <strong>⏰ Quick Action Required:</strong> A new visitor has registered and needs your approval to proceed with their visit.
+                </div>
+                
+                <div class='visitor-info'>
+                    <h3 style='margin-top: 0; color: #495057; border-bottom: 2px solid #007bff; padding-bottom: 10px;'>
+                        👤 Visitor Details
+                    </h3>
+                    <table class='info-table'>
+                        <tr>
+                            <td>📝 Full Name:</td>
+                            <td><strong>John Smith</strong></td>
+                        </tr>
+                        <tr>
+                            <td>📧 Email Address:</td>
+                            <td>john.smith@example.com</td>
+                        </tr>
+                        <tr>
+                            <td>🏢 Company:</td>
+                            <td>ABC Corporation</td>
+                        </tr>
+                        <tr>
+                            <td>🎯 Purpose of Visit:</td>
+                            <td>Business Meeting - Project Discussion</td>
+                        </tr>
+                        <tr>
+                            <td>📅 Expected Arrival:</td>
+                            <td><strong>2025-08-14 14:30</strong></td>
+                        </tr>
+                        <tr>
+                            <td>👥 Whom to Meet:</td>
+                            <td>Sarah Johnson</td>
+                        </tr>
+                        <tr>
+                            <td>📊 Current Status:</td>
+                            <td><span class='status-badge'>AwaitingApproval</span></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class='quick-info'>
+                    <h4 style='margin-top: 0; color: #1565c0;'>🚀 One-Click Actions Available</h4>
+                    <p style='margin-bottom: 0;'>You can approve or reject this visitor request directly from this email. No need to log into the system!</p>
+                </div>
+
+                <div class='action-buttons'>
+                    <h3 style='color: #495057; margin-bottom: 20px;'>Choose Your Action:</h3>
+                    
+                    <a href='#approve' class='btn btn-approve' 
+                       style='text-decoration: none; color: white;'
+                       onclick='alert("✅ In real email, this would approve the visitor instantly!")'>
+                        ✅ APPROVE VISITOR
+                    </a>
+                    
+                    <a href='#reject' class='btn btn-reject' 
+                       style='text-decoration: none; color: white;'
+                       onclick='alert("❌ In real email, this would show rejection form with optional reason!")'>
+                        ❌ REJECT VISITOR
+                    </a>
+                </div>
+
+                <div style='background: #f8f9fa; border-radius: 8px; padding: 15px; margin: 20px 0;'>
+                    <h4 style='margin-top: 0; color: #495057;'>📋 What happens next?</h4>
+                    <ul style='margin-bottom: 0; color: #6c757d;'>
+                        <li><strong>If you APPROVE:</strong> The visitor will receive a confirmation email and can proceed with their visit</li>
+                        <li><strong>If you REJECT:</strong> The visitor will be notified that their request was declined</li>
+                        <li><strong>No action needed:</strong> You can also manage this visitor request through the admin dashboard</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class='footer'>
+                <p style='margin: 0;'>
+                    🤖 This is an automated notification from the Visitor Management System<br>
+                    📅 Sent on 2025-08-14 17:02:30<br>
+                    🔐 Secure email action links expire daily for security
+                </p>
+            </div>
+        </div>
+
+        <div class='demo-note'>
+            <h3>🔧 Technical Implementation:</h3>
+            <p><strong>Approve URL Format:</strong> <code>http://localhost:5014/api/email-actions/approve/{visitorId}/{token}</code></p>
+            <p><strong>Reject URL Format:</strong> <code>http://localhost:5014/api/email-actions/reject-form/{visitorId}/{token}</code></p>
+            <p><strong>Security:</strong> Tokens are generated using SHA256 hashing and expire daily</p>
+            <p><strong>Workflow:</strong> Click button → Validate token → Update visitor status → Send confirmation email</p>
+        </div>
+    </div>
+</body>
+</html>

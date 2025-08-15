@@ -1,149 +1,105 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLocation } from '../../contexts/LocationContext';
-import EmailTester from './EmailTester';
+import FormBuilder from './FormBuilder';
 import { 
   Settings, 
-  Plus, 
-  X, 
-  Save, 
-  Eye, 
-  EyeOff, 
-  GripVertical,
-  Edit,
-  Trash2,
-  Camera,
-  FileText,
-  CheckSquare,
-  Calendar,
-  List,
-  Type,
   MapPin,
-  Building,
+  Wrench,
+  Bell,
+  Shield,
   Users,
+  Database,
   Mail,
-  Phone,
-  CreditCard
+  Clock,
+  Save,
+  RefreshCw,
+  AlertCircle,
+  Check,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 const SettingsPage: React.FC = () => {
   const { 
-    settings, 
-    updateSettings, 
-    addPurposeOption, 
-    removePurposeOption,
-    addIdTypeOption,
-    removeIdTypeOption,
-    addCustomField,
-    updateCustomField,
-    removeCustomField
+    settings,
+    saveAllSettings
   } = useSettings();
   const { user } = useAuth();
   const { locations } = useLocation();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'fields' | 'custom' | 'email'>('general');
   const [selectedLocationId, setSelectedLocationId] = useState<string>('');
-  const [newPurpose, setNewPurpose] = useState('');
-  const [newIdType, setNewIdType] = useState('');
-  const [showCustomFieldForm, setShowCustomFieldForm] = useState(false);
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [customFieldForm, setCustomFieldForm] = useState({
-    name: '',
-    type: 'text' as 'text' | 'select' | 'textarea' | 'checkbox' | 'date',
-    label: '',
-    placeholder: '',
-    required: false,
-    options: ['']
+  const [activeTab, setActiveTab] = useState<'form' | 'notifications' | 'security' | 'system'>('form');
+  const [systemSettings, setSystemSettings] = useState({
+    autoApprovalEnabled: false,
+    maxVisitDuration: 8,
+    reminderTimeBeforeVisit: 30,
+    allowWalkIns: true,
+    requireApprovalForAllVisits: true,
+    enableSMSNotifications: true,
+    enableEmailNotifications: true,
+    enableCheckInReminders: true,
+    dataRetentionDays: 90,
+    enableAuditLogs: true
   });
 
-  const handleSaveSettings = () => {
-    // Settings are automatically saved via context
-    alert('Settings saved successfully!');
-  };
+  // Load settings when location changes or component mounts
+  useEffect(() => {
+    const loadLocationSettings = async () => {
+      // TODO: Load location-specific settings from API
+      // For now, use default values
+    };
+    
+    loadLocationSettings();
+  }, [selectedLocationId]);
 
-  const handleAddPurpose = () => {
-    if (newPurpose.trim()) {
-      addPurposeOption(newPurpose);
-      setNewPurpose('');
+  // Save notifications settings
+  const saveNotificationSettings = async () => {
+    const notificationSettings = {
+      enableEmailNotifications: systemSettings.enableEmailNotifications,
+      enableSMSNotifications: systemSettings.enableSMSNotifications,
+      enableCheckInReminders: systemSettings.enableCheckInReminders,
+      reminderTimeBeforeVisit: systemSettings.reminderTimeBeforeVisit
+    };
+
+    const success = await saveAllSettings(notificationSettings, selectedLocationId);
+    if (success) {
+      alert('Notification settings saved successfully!');
+    } else {
+      alert('Failed to save notification settings. Please try again.');
     }
   };
 
-  const handleAddIdType = () => {
-    if (newIdType.trim()) {
-      addIdTypeOption(newIdType);
-      setNewIdType('');
+  // Save security settings
+  const saveSecuritySettings = async () => {
+    const securitySettings = {
+      requireApprovalForAllVisits: systemSettings.requireApprovalForAllVisits,
+      autoApprovalEnabled: systemSettings.autoApprovalEnabled,
+      allowWalkIns: systemSettings.allowWalkIns,
+      dataRetentionDays: systemSettings.dataRetentionDays,
+      enableAuditLogs: systemSettings.enableAuditLogs
+    };
+
+    const success = await saveAllSettings(securitySettings, selectedLocationId);
+    if (success) {
+      alert('Security settings saved successfully!');
+    } else {
+      alert('Failed to save security settings. Please try again.');
     }
   };
 
-  const handleCustomFieldSubmit = () => {
-    if (customFieldForm.name && customFieldForm.label) {
-      const fieldData = {
-        ...customFieldForm,
-        options: customFieldForm.type === 'select' ? customFieldForm.options.filter(o => o.trim()) : undefined
-      };
+  // Save system settings
+  const saveSystemSettings = async () => {
+    const systemSettingsData = {
+      maxVisitDuration: systemSettings.maxVisitDuration
+    };
 
-      if (editingField) {
-        updateCustomField(editingField, fieldData);
-        setEditingField(null);
-      } else {
-        addCustomField(fieldData);
-      }
-
-      setCustomFieldForm({
-        name: '',
-        type: 'text' as 'text' | 'select' | 'textarea' | 'checkbox' | 'date',
-        label: '',
-        placeholder: '',
-        required: false,
-        options: ['']
-      });
-      setShowCustomFieldForm(false);
-    }
-  };
-
-  const handleEditCustomField = (field: any) => {
-    setCustomFieldForm({
-      name: field.name,
-      type: field.type,
-      label: field.label,
-      placeholder: field.placeholder || '',
-      required: field.required,
-      options: field.options || ['']
-    });
-    setEditingField(field.id);
-    setShowCustomFieldForm(true);
-  };
-
-  const addOptionToCustomField = () => {
-    setCustomFieldForm(prev => ({
-      ...prev,
-      options: [...prev.options, '']
-    }));
-  };
-
-  const updateCustomFieldOption = (index: number, value: string) => {
-    setCustomFieldForm(prev => ({
-      ...prev,
-      options: prev.options.map((opt, i) => i === index ? value : opt)
-    }));
-  };
-
-  const removeCustomFieldOption = (index: number) => {
-    setCustomFieldForm(prev => ({
-      ...prev,
-      options: prev.options.filter((_, i) => i !== index)
-    }));
-  };
-
-  const getFieldTypeIcon = (type: string) => {
-    switch (type) {
-      case 'text': return <Type className="w-4 h-4" />;
-      case 'select': return <List className="w-4 h-4" />;
-      case 'textarea': return <FileText className="w-4 h-4" />;
-      case 'checkbox': return <CheckSquare className="w-4 h-4" />;
-      case 'date': return <Calendar className="w-4 h-4" />;
-      default: return <Type className="w-4 h-4" />;
+    const success = await saveAllSettings(systemSettingsData, selectedLocationId);
+    if (success) {
+      alert('System settings saved successfully!');
+    } else {
+      alert('Failed to save system settings. Please try again.');
     }
   };
 
@@ -157,7 +113,7 @@ const SettingsPage: React.FC = () => {
               <div>
                 <h1 className="text-2xl font-bold text-white">System Settings</h1>
                 <div className="flex items-center space-x-4 text-blue-100 opacity-80">
-                  <span>Configure visitor registration form and options</span>
+                  <span>Configure visitor management system settings</span>
                   {settings.locationName && user?.role !== 'admin' && (
                     <div className="flex items-center">
                       <MapPin className="w-4 h-4 mr-1" />
@@ -192,615 +148,407 @@ const SettingsPage: React.FC = () => {
                   </select>
                 </div>
               )}
-              <button
-                onClick={handleSaveSettings}
-                className="flex items-center px-4 py-2 bg-[#EB6E38] hover:bg-[#d85a2a] text-white rounded-lg transition duration-200"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                Save Settings
-              </button>
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs Navigation */}
         <div className="border-b border-gray-200">
           <nav className="flex space-x-8 px-8">
             <button
-              onClick={() => setActiveTab('general')}
+              onClick={() => setActiveTab('form')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 ${
-                activeTab === 'general'
-                  ? 'border-indigo-500 text-indigo-600'
+                activeTab === 'form'
+                  ? 'border-purple-500 text-purple-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              General Settings
+              <Wrench className="inline w-4 h-4 mr-2" />
+              Form Configuration
             </button>
             <button
-              onClick={() => setActiveTab('fields')}
+              onClick={() => setActiveTab('notifications')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 ${
-                activeTab === 'fields'
-                  ? 'border-indigo-500 text-indigo-600'
+                activeTab === 'notifications'
+                  ? 'border-purple-500 text-purple-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Form Fields
+              <Bell className="inline w-4 h-4 mr-2" />
+              Notifications
             </button>
             <button
-              onClick={() => setActiveTab('custom')}
+              onClick={() => setActiveTab('security')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 ${
-                activeTab === 'custom'
-                  ? 'border-indigo-500 text-indigo-600'
+                activeTab === 'security'
+                  ? 'border-purple-500 text-purple-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Custom Fields
+              <Shield className="inline w-4 h-4 mr-2" />
+              Security & Access
             </button>
             <button
-              onClick={() => setActiveTab('email')}
+              onClick={() => setActiveTab('system')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 ${
-                activeTab === 'email'
-                  ? 'border-indigo-500 text-indigo-600'
+                activeTab === 'system'
+                  ? 'border-purple-500 text-purple-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Email Settings
+              <Database className="inline w-4 h-4 mr-2" />
+              System Settings
             </button>
           </nav>
         </div>
 
         <div className="p-8">
-          {activeTab === 'general' && (
+          {activeTab === 'form' && (
             <div className="space-y-8">
-              {/* Purpose of Visit Options */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Purpose of Visit Options</h3>
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <input
-                      type="text"
-                      value={newPurpose}
-                      onChange={(e) => setNewPurpose(e.target.value)}
-                      placeholder="Add new purpose option"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddPurpose()}
-                    />
-                    <button
-                      onClick={handleAddPurpose}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition duration-200"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {settings.purposeOfVisitOptions.map((purpose) => (
-                      <div key={purpose} className="flex items-center bg-white rounded-lg px-3 py-2 border border-gray-200">
-                        <span className="text-sm text-gray-700">{purpose}</span>
-                        <button
-                          onClick={() => removePurposeOption(purpose)}
-                          className="ml-2 text-gray-400 hover:text-red-500 transition duration-200"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+              {/* Form Field Settings Section */}
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+                      <Wrench className="w-6 h-6 mr-3 text-indigo-600" />
+                      Form Configuration
+                    </h3>
+                    <p className="text-gray-600 mt-1">
+                      Configure visitor registration form fields and dropdown options. All settings are saved together.
+                    </p>
                   </div>
                 </div>
-              </div>
-
-              {/* ID Type Options */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">ID Type Options</h3>
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <input
-                      type="text"
-                      value={newIdType}
-                      onChange={(e) => setNewIdType(e.target.value)}
-                      placeholder="Add new ID type"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddIdType()}
-                    />
-                    <button
-                      onClick={handleAddIdType}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition duration-200"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {settings.idTypeOptions.map((idType) => (
-                      <div key={idType} className="flex items-center bg-white rounded-lg px-3 py-2 border border-gray-200">
-                        <span className="text-sm text-gray-700">{idType}</span>
-                        <button
-                          onClick={() => removeIdTypeOption(idType)}
-                          className="ml-2 text-gray-400 hover:text-red-500 transition duration-200"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                
+                <FormBuilder 
+                  locationId={selectedLocationId ? parseInt(selectedLocationId) : undefined}
+                  onSave={() => {
+                    // The FormBuilder already broadcasts the update via CustomEvent
+                    // The SettingsContext will pick it up automatically
+                    // No need to call updateSettings here to avoid conflicts
+                  }}
+                />
               </div>
             </div>
           )}
 
-          {activeTab === 'fields' && (
+          {activeTab === 'notifications' && (
             <div className="space-y-8">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Form Field Configuration</h3>
-                <div className="text-sm text-gray-500">
-                  Control which fields appear in visitor registration forms
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+                      <Bell className="w-6 h-6 mr-3 text-indigo-600" />
+                      Notification Settings
+                    </h3>
+                    <p className="text-gray-600 mt-1">
+                      Configure how and when notifications are sent to staff and visitors.
+                    </p>
+                  </div>
+                  <button
+                    onClick={saveNotificationSettings}
+                    className="flex items-center px-4 py-2 bg-[#EB6E38] hover:bg-[#d85a2a] text-white rounded-lg transition duration-200"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Settings
+                  </button>
                 </div>
-              </div>
 
-              {/* Core Fields */}
-              <div>
-                <h4 className="text-md font-semibold text-gray-800 mb-4">Core Information Fields</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Full Name - Always required */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Users className="w-5 h-5 text-blue-600 mr-3" />
-                        <div>
-                          <p className="font-medium text-gray-900">Full Name</p>
-                          <p className="text-sm text-gray-600">Visitor's complete name (Required)</p>
-                        </div>
-                      </div>
-                      <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-                        Required
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Phone Number - Always required */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Phone className="w-5 h-5 text-blue-600 mr-3" />
-                        <div>
-                          <p className="font-medium text-gray-900">Phone Number</p>
-                          <p className="text-sm text-gray-600">Contact number (Required)</p>
-                        </div>
-                      </div>
-                      <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-                        Required
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Email Field */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        {settings.enabledFields.email ? (
-                          <Eye className="w-5 h-5 text-green-600 mr-3" />
-                        ) : (
-                          <EyeOff className="w-5 h-5 text-gray-400 mr-3" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">Email Address</p>
-                          <p className="text-sm text-gray-600">Visitor email address (Optional)</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => updateSettings({
-                          enabledFields: {
-                            ...settings.enabledFields,
-                            email: !settings.enabledFields.email
-                          }
-                        })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          settings.enabledFields.email ? 'bg-indigo-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.enabledFields.email ? 'translate-x-6' : 'translate-x-1'
-                          }`}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Email Notifications */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <Mail className="w-5 h-5 mr-2 text-blue-600" />
+                      Email Notifications
+                    </h4>
+                    <div className="space-y-3">
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.enableEmailNotifications}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            enableEmailNotifications: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
                         />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Company Name Field */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        {settings.enabledFields.companyName ? (
-                          <Eye className="w-5 h-5 text-green-600 mr-3" />
-                        ) : (
-                          <EyeOff className="w-5 h-5 text-gray-400 mr-3" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">Company Name</p>
-                          <p className="text-sm text-gray-600">Visitor's company or organization</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => updateSettings({
-                          enabledFields: {
-                            ...settings.enabledFields,
-                            companyName: !settings.enabledFields.companyName
-                          }
-                        })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          settings.enabledFields.companyName ? 'bg-indigo-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.enabledFields.companyName ? 'translate-x-6' : 'translate-x-1'
-                          }`}
+                        <span className="text-sm text-gray-700">Enable email notifications</span>
+                      </label>
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.enableCheckInReminders}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            enableCheckInReminders: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
                         />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Visit Information Fields */}
-              <div>
-                <h4 className="text-md font-semibold text-gray-800 mb-4">Visit Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Purpose of Visit - Always required */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Building className="w-5 h-5 text-blue-600 mr-3" />
-                        <div>
-                          <p className="font-medium text-gray-900">Purpose of Visit</p>
-                          <p className="text-sm text-gray-600">Why the visitor is here (Required)</p>
-                        </div>
-                      </div>
-                      <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-                        Required
-                      </div>
+                        <span className="text-sm text-gray-700">Send check-in reminders</span>
+                      </label>
                     </div>
                   </div>
 
-                  {/* Whom to Meet - Always required */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Users className="w-5 h-5 text-blue-600 mr-3" />
-                        <div>
-                          <p className="font-medium text-gray-900">Whom to Meet</p>
-                          <p className="text-sm text-gray-600">Staff member to visit (Required)</p>
-                        </div>
-                      </div>
-                      <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-                        Required
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Security & Verification Fields */}
-              <div>
-                <h4 className="text-md font-semibold text-gray-800 mb-4">Security & Verification</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* ID Proof Field */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        {settings.enabledFields.idProof ? (
-                          <Eye className="w-5 h-5 text-green-600 mr-3" />
-                        ) : (
-                          <EyeOff className="w-5 h-5 text-gray-400 mr-3" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">ID Proof</p>
-                          <p className="text-sm text-gray-600">ID type and number verification</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => updateSettings({
-                          enabledFields: {
-                            ...settings.enabledFields,
-                            idProof: !settings.enabledFields.idProof
-                          }
-                        })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          settings.enabledFields.idProof ? 'bg-indigo-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.enabledFields.idProof ? 'translate-x-6' : 'translate-x-1'
-                          }`}
+                  {/* SMS Notifications */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <Bell className="w-5 h-5 mr-2 text-green-600" />
+                      SMS Notifications
+                    </h4>
+                    <div className="space-y-3">
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.enableSMSNotifications}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            enableSMSNotifications: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
                         />
-                      </button>
+                        <span className="text-sm text-gray-700">Enable SMS notifications</span>
+                      </label>
                     </div>
                   </div>
 
-                  {/* Photo Field */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        {settings.enabledFields.photo ? (
-                          <Eye className="w-5 h-5 text-green-600 mr-3" />
-                        ) : (
-                          <EyeOff className="w-5 h-5 text-gray-400 mr-3" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">Photo Capture</p>
-                          <p className="text-sm text-gray-600">Visitor photo for identification</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => updateSettings({
-                          enabledFields: {
-                            ...settings.enabledFields,
-                            photo: !settings.enabledFields.photo
-                          }
-                        })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          settings.enabledFields.photo ? 'bg-indigo-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.enabledFields.photo ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Photo Requirements (only show if photo is enabled) */}
-              {settings.enabledFields.photo && (
-                <div>
-                  <h4 className="text-md font-semibold text-gray-800 mb-4">Photo Settings</h4>
-                  <div className="bg-gray-50 rounded-lg p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Camera className="w-5 h-5 text-indigo-600 mr-3" />
-                        <div>
-                          <p className="font-medium text-gray-900">Make Photo Mandatory</p>
-                          <p className="text-sm text-gray-600">Require visitors to take a photo during registration</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => updateSettings({ isPhotoMandatory: !settings.isPhotoMandatory })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          settings.isPhotoMandatory ? 'bg-indigo-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.isPhotoMandatory ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          
-          {activeTab === 'email' && (
-            <div className="px-6 py-8">
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Email Settings & Testing</h3>
-                  <p className="text-gray-600 mb-6">
-                    Use this section to test the email notification system and configure email settings.
-                    You can send test emails to verify that your email configuration is working properly.
-                  </p>
-                  
-                  <div className="mb-8">
-                    <h4 className="text-md font-medium text-gray-800 mb-2">Current Email Configuration</h4>
-                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-500">SMTP Server</p>
-                          <p className="font-medium">{settings.emailSettings?.smtpServer || 'Not configured'}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500">SMTP Port</p>
-                          <p className="font-medium">{settings.emailSettings?.smtpPort || 'Not configured'}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500">Sender Email</p>
-                          <p className="font-medium">{settings.emailSettings?.fromEmail || 'Not configured'}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500">Sender Name</p>
-                          <p className="font-medium">{settings.emailSettings?.fromName || 'Not configured'}</p>
-                        </div>
+                  {/* Reminder Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <Clock className="w-5 h-5 mr-2 text-yellow-600" />
+                      Reminder Settings
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <label className="text-sm text-gray-700 min-w-fit">Reminder time before visit:</label>
+                        <select
+                          value={systemSettings.reminderTimeBeforeVisit}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            reminderTimeBeforeVisit: parseInt(e.target.value)
+                          }))}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          <option value="15">15 minutes</option>
+                          <option value="30">30 minutes</option>
+                          <option value="60">1 hour</option>
+                          <option value="120">2 hours</option>
+                        </select>
                       </div>
                     </div>
                   </div>
-                  
-                  <EmailTester />
                 </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'custom' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Custom Fields</h3>
-                <button
-                  onClick={() => setShowCustomFieldForm(true)}
-                  className="flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition duration-200"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Custom Field
-                </button>
+          {activeTab === 'security' && (
+            <div className="space-y-8">
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+                      <Shield className="w-6 h-6 mr-3 text-indigo-600" />
+                      Security & Access Control
+                    </h3>
+                    <p className="text-gray-600 mt-1">
+                      Configure security settings and access control policies.
+                    </p>
+                  </div>
+                  <button
+                    onClick={saveSecuritySettings}
+                    className="flex items-center px-4 py-2 bg-[#EB6E38] hover:bg-[#d85a2a] text-white rounded-lg transition duration-200"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Settings
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Approval Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <Check className="w-5 h-5 mr-2 text-blue-600" />
+                      Approval Settings
+                    </h4>
+                    <div className="space-y-3">
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.requireApprovalForAllVisits}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            requireApprovalForAllVisits: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                        />
+                        <span className="text-sm text-gray-700">Require approval for all visits</span>
+                      </label>
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.autoApprovalEnabled}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            autoApprovalEnabled: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                        />
+                        <span className="text-sm text-gray-700">Enable auto-approval for trusted visitors</span>
+                      </label>
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.allowWalkIns}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            allowWalkIns: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                        />
+                        <span className="text-sm text-gray-700">Allow walk-in visitors</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Data Privacy */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <Eye className="w-5 h-5 mr-2 text-green-600" />
+                      Data Privacy
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <label className="text-sm text-gray-700 min-w-fit">Data retention period:</label>
+                        <select
+                          value={systemSettings.dataRetentionDays}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            dataRetentionDays: parseInt(e.target.value)
+                          }))}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          <option value="30">30 days</option>
+                          <option value="90">90 days</option>
+                          <option value="180">6 months</option>
+                          <option value="365">1 year</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={systemSettings.enableAuditLogs}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            enableAuditLogs: e.target.checked
+                          }))}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                        />
+                        <span className="text-sm text-gray-700">Enable audit logs</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
+            </div>
+          )}
 
-              {/* Custom Field Form */}
-              {showCustomFieldForm && (
-                <div className="bg-gray-50 rounded-lg p-6 border-2 border-indigo-200">
-                  <h4 className="text-md font-semibold text-gray-900 mb-4">
-                    {editingField ? 'Edit Custom Field' : 'Add New Custom Field'}
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Field Name *</label>
-                      <input
-                        type="text"
-                        value={customFieldForm.name}
-                        onChange={(e) => setCustomFieldForm(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="e.g., department, emergency_contact"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Field Type *</label>
-                      <select
-                        value={customFieldForm.type}
-                        onChange={(e) => setCustomFieldForm(prev => ({ ...prev, type: e.target.value as any }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      >
-                        <option value="text">Text Input</option>
-                        <option value="select">Dropdown</option>
-                        <option value="textarea">Text Area</option>
-                        <option value="checkbox">Checkbox</option>
-                        <option value="date">Date</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Display Label *</label>
-                      <input
-                        type="text"
-                        value={customFieldForm.label}
-                        onChange={(e) => setCustomFieldForm(prev => ({ ...prev, label: e.target.value }))}
-                        placeholder="e.g., Department, Emergency Contact"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Placeholder</label>
-                      <input
-                        type="text"
-                        value={customFieldForm.placeholder}
-                        onChange={(e) => setCustomFieldForm(prev => ({ ...prev, placeholder: e.target.value }))}
-                        placeholder="Placeholder text"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
+          {activeTab === 'system' && (
+            <div className="space-y-8">
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+                      <Database className="w-6 h-6 mr-3 text-indigo-600" />
+                      System Configuration
+                    </h3>
+                    <p className="text-gray-600 mt-1">
+                      Configure system-wide settings and operational parameters.
+                    </p>
+                  </div>
+                  <button
+                    onClick={saveSystemSettings}
+                    className="flex items-center px-4 py-2 bg-[#EB6E38] hover:bg-[#d85a2a] text-white rounded-lg transition duration-200"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Settings
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Visit Duration Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <Clock className="w-5 h-5 mr-2 text-blue-600" />
+                      Visit Duration
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <label className="text-sm text-gray-700 min-w-fit">Maximum visit duration:</label>
+                        <select
+                          value={systemSettings.maxVisitDuration}
+                          onChange={(e) => setSystemSettings(prev => ({
+                            ...prev,
+                            maxVisitDuration: parseInt(e.target.value)
+                          }))}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          <option value="2">2 hours</option>
+                          <option value="4">4 hours</option>
+                          <option value="8">8 hours</option>
+                          <option value="24">24 hours</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 
-                  {customFieldForm.type === 'select' && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
-                      {customFieldForm.options.map((option, index) => (
-                        <div key={index} className="flex items-center space-x-2 mb-2">
-                          <input
-                            type="text"
-                            value={option}
-                            onChange={(e) => updateCustomFieldOption(index, e.target.value)}
-                            placeholder={`Option ${index + 1}`}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                          />
-                          <button
-                            onClick={() => removeCustomFieldOption(index)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition duration-200"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                  {/* System Status */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                      <AlertCircle className="w-5 h-5 mr-2 text-green-600" />
+                      System Status
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <span className="text-sm text-green-800">Database Connection</span>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-sm text-green-700">Online</span>
                         </div>
-                      ))}
-                      <button
-                        onClick={addOptionToCustomField}
-                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium"
-                      >
-                        + Add Option
-                      </button>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <span className="text-sm text-green-800">API Service</span>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-sm text-green-700">Running</span>
+                        </div>
+                      </div>
                     </div>
-                  )}
-
-                  <div className="flex items-center mb-4">
-                    <input
-                      type="checkbox"
-                      id="required"
-                      checked={customFieldForm.required}
-                      onChange={(e) => setCustomFieldForm(prev => ({ ...prev, required: e.target.checked }))}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="required" className="ml-2 text-sm text-gray-700">
-                      Required field
-                    </label>
                   </div>
+                </div>
 
-                  <div className="flex space-x-3">
+                {/* Actions */}
+                <div className="mt-8 pt-6 border-t border-gray-200">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">System Actions</h4>
+                  <div className="flex space-x-4">
                     <button
-                      onClick={handleCustomFieldSubmit}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition duration-200"
+                      onClick={() => alert('Cache cleared successfully!')}
+                      className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition duration-200"
                     >
-                      {editingField ? 'Update Field' : 'Add Field'}
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Clear Cache
                     </button>
                     <button
                       onClick={() => {
-                        setShowCustomFieldForm(false);
-                        setEditingField(null);
-                        setCustomFieldForm({
-                          name: '',
-                          type: 'text',
-                          label: '',
-                          placeholder: '',
-                          required: false,
-                          options: ['']
-                        });
+                        if (confirm('Are you sure you want to reset all settings to defaults?')) {
+                          alert('Settings reset to defaults!');
+                        }
                       }}
-                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition duration-200"
+                      className="flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition duration-200"
                     >
-                      Cancel
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Reset to Defaults
                     </button>
                   </div>
                 </div>
-              )}
-
-              {/* Custom Fields List */}
-              <div className="space-y-4">
-                {settings.customFields.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No custom fields created yet</p>
-                    <p className="text-sm">Add custom fields to collect additional visitor information</p>
-                  </div>
-                ) : (
-                  settings.customFields.map((field) => (
-                    <div key={field.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <GripVertical className="w-5 h-5 text-gray-400" />
-                          {getFieldTypeIcon(field.type)}
-                          <div>
-                            <p className="font-medium text-gray-900">{field.label}</p>
-                            <p className="text-sm text-gray-500">
-                              {field.name} • {field.type} • {field.required ? 'Required' : 'Optional'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => handleEditCustomField(field)}
-                            className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition duration-200"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => removeCustomField(field.id)}
-                            className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-200"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
               </div>
             </div>
           )}

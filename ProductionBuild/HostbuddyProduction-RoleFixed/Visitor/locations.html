@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visitor Management - Available Locations</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .location-card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 15px 0; background: #f9f9f9; }
+        .url-link { background: #e3f2fd; padding: 10px; border-radius: 4px; font-family: monospace; word-break: break-all; }
+        .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .working { background: #c8e6c9; color: #2e7d32; }
+        .needs-setup { background: #ffecb3; color: #f57c00; }
+        h1 { color: #2d4170; }
+        .note { background: #fff3e0; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ff9800; }
+    </style>
+</head>
+<body>
+    <h1>🏢 Visitor Management System - Location URLs</h1>
+    
+    <div class="note">
+        <strong>📝 Note:</strong> Make sure both API server (port 9524) and React server (port 5173) are running before testing these URLs.
+    </div>
+
+    <h2>Available Location Registration URLs</h2>
+
+    <div class="location-card">
+        <h3>🏢 Main Office <span class="status working">WORKING</span></h3>
+        <p><strong>Description:</strong> Corporate headquarters and main reception</p>
+        <p><strong>Address:</strong> 123 Business Ave, Suite 100, New York, NY 10001</p>
+        <div class="url-link">
+            <a href="http://localhost:5173/visit/main-office" target="_blank">
+                http://localhost:5173/visit/main-office
+            </a>
+        </div>
+    </div>
+
+    <div class="location-card">
+        <h3>🏛️ Corporate Office <span class="status needs-setup">NEEDS DATABASE UPDATE</span></h3>
+        <p><strong>Description:</strong> Executive offices and boardroom facilities</p>
+        <p><strong>Address:</strong> 789 Corporate Blvd, Tower A, New York, NY 10003</p>
+        <div class="url-link">
+            <a href="http://localhost:5173/visit/corporate-office" target="_blank">
+                http://localhost:5173/visit/corporate-office
+            </a>
+        </div>
+    </div>
+
+    <div class="location-card">
+        <h3>🔬 Research Lab <span class="status working">WORKING</span></h3>
+        <p><strong>Description:</strong> R&D facility and testing center</p>
+        <p><strong>Address:</strong> 456 Innovation Dr, Building B, New York, NY 10002</p>
+        <div class="url-link">
+            <a href="http://localhost:5173/visit/research-lab" target="_blank">
+                http://localhost:5173/visit/research-lab
+            </a>
+        </div>
+    </div>
+
+    <h2>🛠️ Setup Instructions</h2>
+    
+    <ol>
+        <li><strong>Start API Server:</strong>
+            <pre>cd d:\Visitor\VisitorManagement.API
+dotnet run</pre>
+        </li>
+        <li><strong>Start React Server:</strong>
+            <pre>cd d:\Visitor
+npm run dev</pre>
+        </li>
+        <li><strong>Update Database (for corporate-office):</strong>
+            <pre>cd d:\Visitor\VisitorManagement.API
+dotnet ef database update</pre>
+        </li>
+    </ol>
+
+    <h2>🌐 For LAN Access</h2>
+    <p>Replace <code>localhost</code> with your server's IP address:</p>
+    <div class="url-link">
+        http://[YOUR-SERVER-IP]:5173/visit/main-office<br>
+        http://[YOUR-SERVER-IP]:5173/visit/corporate-office<br>
+        http://[YOUR-SERVER-IP]:5173/visit/research-lab
+    </div>
+
+    <script>
+        // Test API connectivity
+        async function testAPI() {
+            try {
+                const response = await fetch('http://localhost:9524/api/locations');
+                if (response.ok) {
+                    console.log('✅ API Server is running');
+                    document.body.insertAdjacentHTML('afterbegin', 
+                        '<div style="background: #c8e6c9; padding: 10px; border-radius: 4px; margin-bottom: 20px;">✅ API Server is running on port 9524</div>'
+                    );
+                } else {
+                    throw new Error('API not responding');
+                }
+            } catch (error) {
+                console.log('❌ API Server not running');
+                document.body.insertAdjacentHTML('afterbegin', 
+                    '<div style="background: #ffcdd2; padding: 10px; border-radius: 4px; margin-bottom: 20px;">❌ API Server not running. Please start with: cd d:\\Visitor\\VisitorManagement.API && dotnet run</div>'
+                );
+            }
+        }
+        
+        testAPI();
+    </script>
+</body>
+</html>

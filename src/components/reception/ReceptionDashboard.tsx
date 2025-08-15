@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useVisitor } from '../../contexts/VisitorContext';
 import { useAuth } from '../../contexts/AuthContext';
+import ConfirmationDialog from '../common/ConfirmationDialog';
 import { 
   Users, 
   UserCheck, 
@@ -44,6 +45,19 @@ const ReceptionDashboard: React.FC = () => {
     newDate: '',
     newTime: ''
   });
+
+  const [rejectConfirmation, setRejectConfirmation] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    isLoading: false
+  });
+  
   const [activeTab, setActiveTab] = useState<'visitors' | 'analytics' | 'approvals'>('visitors');
 
   const todayVisitors = getVisitorsByDate(selectedDate);
@@ -163,6 +177,54 @@ const ReceptionDashboard: React.FC = () => {
   };
 
   const pendingApprovals = getPendingApprovals();
+
+  // Handle reject visitor confirmation
+  const handleRejectClick = (visitor: any) => {
+    setRejectConfirmation({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      isLoading: false
+    });
+  };
+
+  const handleRejectConfirm = async () => {
+    if (!rejectConfirmation.visitorId) return;
+    
+    setRejectConfirmation(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      const success = await updateVisitorStatus(rejectConfirmation.visitorId, 'rejected');
+      if (success) {
+        console.log(`✅ Successfully rejected visitor ${rejectConfirmation.visitorId}`);
+        setRejectConfirmation({
+          isOpen: false,
+          visitorId: null,
+          visitorName: '',
+          isLoading: false
+        });
+      } else {
+        console.error(`❌ Failed to reject visitor ${rejectConfirmation.visitorId}`);
+        alert('Failed to reject visitor. Please try again.');
+        setRejectConfirmation(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      console.error('Error rejecting visitor:', error);
+      alert('An error occurred while rejecting the visitor. Please try again.');
+      setRejectConfirmation(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleRejectCancel = () => {
+    if (!rejectConfirmation.isLoading) {
+      setRejectConfirmation({
+        isOpen: false,
+        visitorId: null,
+        visitorName: '',
+        isLoading: false
+      });
+    }
+  };
 
   // Handle approval actions
   const handleApprovalAction = async (visitorId: string, action: 'approved' | 'rejected' | 'rescheduled') => {
@@ -760,7 +822,7 @@ const ReceptionDashboard: React.FC = () => {
                               
                               {actions.canReject && (
                                 <button
-                                  onClick={() => handleApprovalAction(visitor.id, 'rejected')}
+                                  onClick={() => handleRejectClick(visitor)}
                                   disabled={actioningVisitor === visitor.id}
                                   className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-md transition duration-200 w-full justify-center"
                                 >
@@ -876,6 +938,19 @@ const ReceptionDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Reject Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={rejectConfirmation.isOpen}
+        title="Reject Visitor"
+        message={`Are you sure you want to reject "${rejectConfirmation.visitorName}"? This action will deny their visit request and send them a rejection notification.`}
+        confirmText="Reject Visitor"
+        cancelText="Cancel"
+        type="warning"
+        onConfirm={handleRejectConfirm}
+        onCancel={handleRejectCancel}
+        isLoading={rejectConfirmation.isLoading}
+      />
     </div>
   );
 };

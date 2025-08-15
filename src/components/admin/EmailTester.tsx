@@ -12,14 +12,7 @@ const EmailTester: React.FC = () => {
   const [result, setResult] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'connected' | 'disconnected'>('idle');
 
-  const getApiBaseUrl = () => {
-    // Use the same API detection logic as apiService
-    const serverIP = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-      ? 'localhost' 
-      : window.location.hostname;
-    
-    return `http://${serverIP}:9524`;
-  };
+  const getApiBaseUrl = () => '/api';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +26,7 @@ const EmailTester: React.FC = () => {
     
     try {
       const response = await fetch(
-        `${getApiBaseUrl()}/api/email/test`,
+  `${getApiBaseUrl()}/email/test`,
         {
           method: 'POST',
           headers: {
@@ -67,7 +60,7 @@ const EmailTester: React.FC = () => {
     
     try {
       const response = await fetch(
-        `${getApiBaseUrl()}/api/email/test-connection`,
+  `${getApiBaseUrl()}/email/test-connection`,
         {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -178,7 +171,7 @@ const EmailTester: React.FC = () => {
           <li>Test emails are only sent through this interface and won't affect real notifications.</li>
           <li>This feature is available only to administrators.</li>
           <li>Check spam folders if you don't see the test email.</li>
-          <li>Ensure both frontend (port 5173/5174) and API server (port 9524) are running.</li>
+          <li>Ensure both frontend (port 5173/5174) and API server (port 5000) are running.</li>
         </ul>
       </div>
       
@@ -188,7 +181,7 @@ const EmailTester: React.FC = () => {
         </p>
         <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc">
           <li>Frontend: <code>npm run dev</code> (typically port 5173 or 5174)</li>
-          <li>API Server: <code>cd VisitorManagement.API && dotnet run</code> (port 9524)</li>
+          <li>API Server: <code>cd VisitorManagement.API && dotnet run</code> (port 5000)</li>
         </ul>
       </div>
     </div>

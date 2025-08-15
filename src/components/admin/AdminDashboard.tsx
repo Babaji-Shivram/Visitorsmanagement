@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useVisitor } from '../../contexts/VisitorContext';
 import { useLocation } from '../../contexts/LocationContext';
 import { useStaff } from '../../contexts/StaffContext';
+import ConfirmationDialog from '../common/ConfirmationDialog';
 import LocationManagement from './LocationManagement';
 import StaffManagement from './StaffManagement';
 import { 
@@ -23,7 +24,8 @@ import {
   Phone,
   Building,
   Clock,
-  Edit
+  Edit,
+  Trash2
 } from 'lucide-react';
 
 // Helper function to convert visitor status enum to display text
@@ -53,9 +55,9 @@ const getStatusText = (status: number | string): string => {
 };
 
 const AdminDashboard: React.FC = () => {
-  const { visitors, updateVisitorStatus } = useVisitor();
+  const { visitors, updateVisitorStatus, updateVisitorAssignment, rescheduleVisitor, deleteVisitor } = useVisitor();
   const { locations } = useLocation();
-  const { getActiveStaffMembers } = useStaff();
+  const { getActiveStaffMembers, getStaffMembersByLocation } = useStaff();
   const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'approvals' | 'locations' | 'staff'>('live');
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
   const [refreshInterval, setRefreshInterval] = useState<number | null>(null);
@@ -80,15 +82,42 @@ const AdminDashboard: React.FC = () => {
     isOpen: boolean;
     visitorId: string | null;
     visitorName: string;
+    visitorLocationId: string;
     currentWhomToMeet: string;
     newWhomToMeet: string;
   }>({
     isOpen: false,
     visitorId: null,
     visitorName: '',
+    visitorLocationId: '',
     currentWhomToMeet: '',
     newWhomToMeet: ''
   });
+  
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    isLoading: false
+  });
+  
+  const [rejectConfirmation, setRejectConfirmation] = useState<{
+    isOpen: boolean;
+    visitorId: string | null;
+    visitorName: string;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    visitorId: null,
+    visitorName: '',
+    isLoading: false
+  });
+  
   const [dateRange, setDateRange] = useState({
     from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days ago
     to: new Date().toISOString().split('T')[0]
@@ -176,50 +205,74 @@ const AdminDashboard: React.FC = () => {
           canApprove: isTodayOrFuture,
           canReject: true,
           canReschedule: true,
-          canEdit: true
+          canEdit: true,
+          canDelete: true
         };
       case 'approved':
+        // Once approved, all options should be disabled for admin
         return {
           canApprove: false,
-          canReject: true,
-          canReschedule: true,
-          canEdit: true
+          canReject: false,
+          canReschedule: false,
+          canEdit: false,
+          canDelete: true // Can still delete approved visitors
         };
       case 'rejected':
+        // Once rejected, all options should be disabled for admin
         return {
-          canApprove: isTodayOrFuture,
+          canApprove: false,
           canReject: false,
-          canReschedule: true,
-          canEdit: true
+          canReschedule: false,
+          canEdit: false,
+          canDelete: true // Can delete rejected visitors
         };
       case 'rescheduled':
         return {
           canApprove: isTodayOrFuture,
           canReject: true,
           canReschedule: true,
-          canEdit: true
+          canEdit: true,
+          canDelete: true
         };
       default:
         return {
           canApprove: false,
           canReject: false,
           canReschedule: false,
-          canEdit: false
+          canEdit: false,
+          canDelete: true // Can delete visitors in other states
         };
     }
   };
 
   // Get visitors that need action - not just awaiting approval
   const getPendingApprovals = () => {
-    return visitors.filter(v => {
+    const filteredVisitors = visitors.filter(v => {
       const matchesLocation = selectedLocationId === 'all' || v.locationId === selectedLocationId;
-      // Include visitors that need some form of action
+      // Include visitors that need some form of action OR are approved/rejected (to show status)
       const needsAction = ['awaiting_approval', 'approved', 'rejected', 'rescheduled'].includes(v.status);
       return needsAction && matchesLocation;
+    });
+
+    // Sort to keep actionable visitors on top
+    return filteredVisitors.sort((a, b) => {
+      const aActionable = ['awaiting_approval', 'rescheduled'].includes(a.status);
+      const bActionable = ['awaiting_approval', 'rescheduled'].includes(b.status);
+      
+      // If both are actionable or both are not actionable, sort by date (newest first)
+      if (aActionable === bActionable) {
+        return new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime();
+      }
+      
+      // Actionable visitors come first
+      return aActionable ? -1 : 1;
     });
   };
 
   const pendingApprovals = getPendingApprovals();
+  
+  // Count visitors that actually need action (exclude approved and rejected ones from count)
+  const visitorsNeedingAction = pendingApprovals.filter(v => !['approved', 'rejected'].includes(v.status)).length;
 
   // Handle approval actions
   const handleApprovalAction = async (visitorId: string, action: 'approved' | 'rejected' | 'rescheduled') => {
@@ -262,6 +315,7 @@ const AdminDashboard: React.FC = () => {
       isOpen: true,
       visitorId: visitor.id,
       visitorName: visitor.fullName,
+      visitorLocationId: visitor.locationId,
       currentWhomToMeet: visitor.whomToMeet,
       newWhomToMeet: visitor.whomToMeet
     });
@@ -272,9 +326,106 @@ const AdminDashboard: React.FC = () => {
       isOpen: false,
       visitorId: null,
       visitorName: '',
+      visitorLocationId: '',
       currentWhomToMeet: '',
       newWhomToMeet: ''
     });
+  };
+
+  // Handle delete visitor modal
+  const handleDeleteClick = (visitor: any) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      isLoading: false
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmation.visitorId) return;
+    
+    setDeleteConfirmation(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      const success = await deleteVisitor(deleteConfirmation.visitorId);
+      if (success) {
+        console.log(`✅ Successfully deleted visitor ${deleteConfirmation.visitorId}`);
+        setDeleteConfirmation({
+          isOpen: false,
+          visitorId: null,
+          visitorName: '',
+          isLoading: false
+        });
+      } else {
+        console.error(`❌ Failed to delete visitor ${deleteConfirmation.visitorId}`);
+        alert('Failed to delete visitor. Please try again.');
+        setDeleteConfirmation(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      console.error('Error deleting visitor:', error);
+      alert('An error occurred while deleting the visitor. Please try again.');
+      setDeleteConfirmation(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    if (!deleteConfirmation.isLoading) {
+      setDeleteConfirmation({
+        isOpen: false,
+        visitorId: null,
+        visitorName: '',
+        isLoading: false
+      });
+    }
+  };
+
+  // Handle reject visitor confirmation
+  const handleRejectClick = (visitor: any) => {
+    setRejectConfirmation({
+      isOpen: true,
+      visitorId: visitor.id,
+      visitorName: visitor.fullName,
+      isLoading: false
+    });
+  };
+
+  const handleRejectConfirm = async () => {
+    if (!rejectConfirmation.visitorId) return;
+    
+    setRejectConfirmation(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      const success = await updateVisitorStatus(rejectConfirmation.visitorId, 'rejected');
+      if (success) {
+        console.log(`✅ Successfully rejected visitor ${rejectConfirmation.visitorId}`);
+        setRejectConfirmation({
+          isOpen: false,
+          visitorId: null,
+          visitorName: '',
+          isLoading: false
+        });
+      } else {
+        console.error(`❌ Failed to reject visitor ${rejectConfirmation.visitorId}`);
+        alert('Failed to reject visitor. Please try again.');
+        setRejectConfirmation(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      console.error('Error rejecting visitor:', error);
+      alert('An error occurred while rejecting the visitor. Please try again.');
+      setRejectConfirmation(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleRejectCancel = () => {
+    if (!rejectConfirmation.isLoading) {
+      setRejectConfirmation({
+        isOpen: false,
+        visitorId: null,
+        visitorName: '',
+        isLoading: false
+      });
+    }
   };
 
   const handleReschedule = async () => {
@@ -285,16 +436,26 @@ const AdminDashboard: React.FC = () => {
     setActioningVisitor(rescheduleModal.visitorId);
     
     try {
-      // Combine date and time (would be used in real API call)
-      // const newDateTime = new Date(`${rescheduleModal.newDate}T${rescheduleModal.newTime}`);
+      // Combine date and time for the API call
+      const newDateTime = new Date(`${rescheduleModal.newDate}T${rescheduleModal.newTime}`);
+      const isoDateTime = newDateTime.toISOString();
       
-      // Here you would typically call an API to update the visitor's date/time
-      // For now, we'll just update the status to rescheduled
-      await updateVisitorStatus(rescheduleModal.visitorId, 'rescheduled');
+      console.log(`🔄 Rescheduling visitor ${rescheduleModal.visitorId} to ${isoDateTime}`);
       
-      closeRescheduleModal();
+      // Call the actual reschedule API
+      const success = await rescheduleVisitor(rescheduleModal.visitorId, isoDateTime);
+      
+      if (success) {
+        console.log(`✅ Successfully rescheduled visitor ${rescheduleModal.visitorId}`);
+        closeRescheduleModal();
+      } else {
+        console.error(`❌ Failed to reschedule visitor ${rescheduleModal.visitorId}`);
+        alert('Failed to reschedule visitor. Please try again.');
+      }
+      
     } catch (error) {
       console.error('Error rescheduling visitor:', error);
+      alert('An error occurred while rescheduling. Please try again.');
     } finally {
       setActioningVisitor(null);
     }
@@ -309,20 +470,19 @@ const AdminDashboard: React.FC = () => {
     setActioningVisitor(editVisitorModal.visitorId);
     
     try {
-      // Here you would typically call an API to update the visitor's whomToMeet field
-      // For now, we'll simulate this by updating the local data
-      console.log(`Updating visitor ${editVisitorModal.visitorId} whomToMeet from "${editVisitorModal.currentWhomToMeet}" to "${editVisitorModal.newWhomToMeet}"`);
+      const success = await updateVisitorAssignment(editVisitorModal.visitorId, editVisitorModal.newWhomToMeet);
       
-      // In a real app, you'd call something like:
-      // await updateVisitorAssignment(editVisitorModal.visitorId, editVisitorModal.newWhomToMeet);
-      
-      closeEditVisitorModal();
-      
-      // Show success message
-      alert(`Visitor assignment updated successfully!\nOld: ${editVisitorModal.currentWhomToMeet}\nNew: ${editVisitorModal.newWhomToMeet}`);
+      if (success) {
+        closeEditVisitorModal();
+        // Show success message
+        alert(`Visitor assignment updated successfully!\nOld: ${editVisitorModal.currentWhomToMeet}\nNew: ${editVisitorModal.newWhomToMeet}`);
+      } else {
+        alert('Failed to update visitor assignment. Please try again.');
+      }
       
     } catch (error) {
       console.error('Error updating visitor assignment:', error);
+      alert('An error occurred while updating the assignment. Please try again.');
     } finally {
       setActioningVisitor(null);
     }
@@ -465,7 +625,7 @@ const AdminDashboard: React.FC = () => {
               }`}
             >
               <Check className="inline w-4 h-4 mr-2" />
-              Approvals ({pendingApprovals.length})
+              Approvals ({visitorsNeedingAction})
             </button>
             <button
               onClick={() => setActiveTab('locations')}
@@ -556,19 +716,24 @@ const AdminDashboard: React.FC = () => {
                   <p className="text-gray-600 mt-1">Review and manage visitor requests</p>
                 </div>
                 <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-                  {pendingApprovals.length} Requiring Action
+                  {visitorsNeedingAction} Requiring Action
                 </div>
               </div>
             </div>
 
             <div className="p-6">
-              {pendingApprovals.length === 0 ? (
+              {visitorsNeedingAction === 0 ? (
                 <div className="text-center py-12">
                   <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Check className="w-12 h-12 text-green-400" />
                   </div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">All Caught Up!</h3>
                   <p className="text-gray-500">No visitors requiring action at the moment.</p>
+                  {pendingApprovals.filter(v => ['approved', 'rejected'].includes(v.status)).length > 0 && (
+                    <p className="text-sm text-gray-400 mt-2">
+                      {pendingApprovals.filter(v => v.status === 'approved').length} approved and {pendingApprovals.filter(v => v.status === 'rejected').length} rejected visitor(s) shown below for reference.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -602,7 +767,13 @@ const AdminDashboard: React.FC = () => {
                           </div>
 
                           <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <span className="text-sm font-medium text-gray-700">Location:</span>
+                                <p className="text-sm text-gray-900 mt-1">
+                                  {locations.find(l => l.id === visitor.locationId)?.name || 'Unknown Location'}
+                                </p>
+                              </div>
                               <div>
                                 <span className="text-sm font-medium text-gray-700">Meeting With:</span>
                                 <p className="text-sm text-gray-900 mt-1">{visitor.whomToMeet}</p>
@@ -625,7 +796,17 @@ const AdminDashboard: React.FC = () => {
                                     <div className="flex items-center mb-3">
                                       <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 border border-green-200 rounded-full text-sm font-medium">
                                         <Check className="w-4 h-4 mr-1" />
-                                        Approved
+                                        Approved - No further actions available
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Show current status if rejected */}
+                                  {visitor.status === 'rejected' && (
+                                    <div className="flex items-center mb-3">
+                                      <span className="inline-flex items-center px-3 py-1 bg-red-100 text-red-800 border border-red-200 rounded-full text-sm font-medium">
+                                        <X className="w-4 h-4 mr-1" />
+                                        Rejected - No further actions available
                                       </span>
                                     </div>
                                   )}
@@ -639,55 +820,69 @@ const AdminDashboard: React.FC = () => {
                                     </div>
                                   )}
                                   
-                                  <div className="flex space-x-3">
-                                    {actions.canApprove && (
-                                      <button
-                                        onClick={() => handleApprovalAction(visitor.id, 'approved')}
-                                        disabled={actioningVisitor === visitor.id}
-                                        className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
-                                      >
-                                        {actioningVisitor === visitor.id ? (
-                                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                                        ) : (
-                                          <Check className="w-4 h-4 mr-2" />
-                                        )}
-                                        Approve
-                                      </button>
-                                    )}
-                                    
-                                    {actions.canReject && (
-                                      <button
-                                        onClick={() => handleApprovalAction(visitor.id, 'rejected')}
-                                        disabled={actioningVisitor === visitor.id}
-                                        className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
-                                      >
-                                        <X className="w-4 h-4 mr-2" />
-                                        Reject
-                                      </button>
-                                    )}
-                                    
-                                    {actions.canReschedule && (
-                                      <button
-                                        onClick={() => openRescheduleModal(visitor)}
-                                        disabled={actioningVisitor === visitor.id}
-                                        className="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
-                                      >
-                                        <Clock className="w-4 h-4 mr-2" />
-                                        Reschedule
-                                      </button>
-                                    )}
-                                    
-                                    {actions.canEdit && (
-                                      <button
-                                        onClick={() => openEditVisitorModal(visitor)}
-                                        disabled={actioningVisitor === visitor.id}
-                                        className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
-                                      >
-                                        <Edit className="w-4 h-4 mr-2" />
-                                        Edit Assignment
-                                      </button>
-                                    )}
-                                  </div>
+                                  {/* Only show action buttons if any action is available */}
+                                  {(actions.canApprove || actions.canReject || actions.canReschedule || actions.canEdit || actions.canDelete) && (
+                                    <div className="flex space-x-3">
+                                      {actions.canApprove && (
+                                        <button
+                                          onClick={() => handleApprovalAction(visitor.id, 'approved')}
+                                          disabled={actioningVisitor === visitor.id}
+                                          className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                        >
+                                          {actioningVisitor === visitor.id ? (
+                                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                          ) : (
+                                            <Check className="w-4 h-4 mr-2" />
+                                          )}
+                                          Approve
+                                        </button>
+                                      )}
+                                      
+                                      {actions.canReject && (
+                                        <button
+                                          onClick={() => handleRejectClick(visitor)}
+                                          disabled={actioningVisitor === visitor.id}
+                                          className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                        >
+                                          <X className="w-4 h-4 mr-2" />
+                                          Reject
+                                        </button>
+                                      )}
+                                      
+                                      {actions.canReschedule && (
+                                        <button
+                                          onClick={() => openRescheduleModal(visitor)}
+                                          disabled={actioningVisitor === visitor.id}
+                                          className="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                        >
+                                          <Clock className="w-4 h-4 mr-2" />
+                                          Reschedule
+                                        </button>
+                                      )}
+                                      
+                                      {actions.canEdit && (
+                                        <button
+                                          onClick={() => openEditVisitorModal(visitor)}
+                                          disabled={actioningVisitor === visitor.id}
+                                          className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                        >
+                                          <Edit className="w-4 h-4 mr-2" />
+                                          Edit Assignment
+                                        </button>
+                                      )}
+                                      
+                                      {actions.canDelete && (
+                                        <button
+                                          onClick={() => handleDeleteClick(visitor)}
+                                          disabled={actioningVisitor === visitor.id}
+                                          className="flex items-center px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium rounded-lg transition duration-200 disabled:opacity-50"
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                 </>
                               );
                             })()}
@@ -1030,6 +1225,9 @@ const AdminDashboard: React.FC = () => {
                   Visitor
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Location
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Meeting With
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1057,6 +1255,12 @@ const AdminDashboard: React.FC = () => {
                         <div className="text-sm font-medium text-gray-900">{visitor.fullName}</div>
                         <div className="text-sm text-gray-500">{visitor.phoneNumber}</div>
                       </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <MapPin className="w-4 h-4 text-gray-400 mr-2" />
+                      <span className="text-sm text-gray-900">{locations.find(l => l.id === visitor.locationId)?.name || 'Unknown'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -1096,13 +1300,28 @@ const AdminDashboard: React.FC = () => {
               Reschedule Visitor
             </h3>
             
-            <div className="mb-4">
+            <div className="mb-6">
               <p className="text-sm text-gray-600 mb-2">
                 <strong>Visitor:</strong> {rescheduleModal.visitorName}
               </p>
-              <p className="text-sm text-gray-600 mb-4">
-                <strong>Current Date/Time:</strong> {new Date(rescheduleModal.currentDate).toLocaleString()}
-              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <p className="text-sm font-medium text-blue-800 mb-1">Current Scheduled Date & Time:</p>
+                <p className="text-lg font-semibold text-blue-900">
+                  {new Date(rescheduleModal.currentDate).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </p>
+                <p className="text-md font-medium text-blue-900">
+                  {new Date(rescheduleModal.currentDate).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </p>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -1176,6 +1395,12 @@ const AdminDashboard: React.FC = () => {
               <p className="text-sm text-gray-600 mb-2">
                 <strong>Visitor:</strong> {editVisitorModal.visitorName}
               </p>
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Location:</strong> {editVisitorModal.visitorLocationId ? 
+                  locations.find(loc => loc.id === editVisitorModal.visitorLocationId)?.name || 'Unknown Location' : 
+                  'No Location'
+                }
+              </p>
               <p className="text-sm text-gray-600 mb-4">
                 <strong>Current Assignment:</strong> {editVisitorModal.currentWhomToMeet}
               </p>
@@ -1185,6 +1410,11 @@ const AdminDashboard: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Assign to Staff Member
+                  {editVisitorModal.visitorLocationId && (
+                    <span className="text-xs text-gray-500 ml-1">
+                      (showing staff from {locations.find(loc => loc.id === editVisitorModal.visitorLocationId)?.name || 'this location'})
+                    </span>
+                  )}
                 </label>
                 <select
                   value={editVisitorModal.newWhomToMeet}
@@ -1195,11 +1425,19 @@ const AdminDashboard: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Select staff member</option>
-                  {getActiveStaffMembers().map(staff => (
-                    <option key={staff.id} value={`${staff.firstName} ${staff.lastName}`}>
-                      {staff.firstName} {staff.lastName} - {staff.designation || 'Staff'}
-                    </option>
-                  ))}
+                  {editVisitorModal.visitorLocationId ? (
+                    getStaffMembersByLocation(editVisitorModal.visitorLocationId).map(staff => (
+                      <option key={staff.id} value={`${staff.firstName} ${staff.lastName}`}>
+                        {staff.firstName} {staff.lastName} - {staff.designation || 'Staff'}
+                      </option>
+                    ))
+                  ) : (
+                    getActiveStaffMembers().map(staff => (
+                      <option key={staff.id} value={`${staff.firstName} ${staff.lastName}`}>
+                        {staff.firstName} {staff.lastName} - {staff.designation || 'Staff'}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -1239,6 +1477,31 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Visitor"
+        message={`Are you sure you want to delete "${deleteConfirmation.visitorName}"? This action cannot be undone and will permanently remove all visitor data including visit history.`}
+        confirmText="Delete Visitor"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        isLoading={deleteConfirmation.isLoading}
+      />
+
+      {/* Reject Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={rejectConfirmation.isOpen}
+        title="Reject Visitor"
+        message={`Are you sure you want to reject "${rejectConfirmation.visitorName}"? This action will deny their visit request and send them a rejection notification.`}
+        confirmText="Reject Visitor"
+        cancelText="Cancel"
+        type="warning"
+        onConfirm={handleRejectConfirm}
+        onCancel={handleRejectCancel}
+        isLoading={rejectConfirmation.isLoading}
+      />
     </div>
   );
 };

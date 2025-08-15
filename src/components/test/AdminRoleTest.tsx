@@ -12,7 +12,7 @@ const AdminRoleTest = () => {
       addResult('🔍 Testing admin login and role configuration...', 'info');
 
       // Test login
-      const loginResponse = await fetch('http://localhost:9524/api/auth/login', {
+  const loginResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -32,7 +32,7 @@ const AdminRoleTest = () => {
       addResult(`✅ Login successful! Role: ${user.role}, RoleConfigurationId: ${user.roleConfigurationId}`, 'success');
 
       // Test role configurations
-      const roleResponse = await fetch('http://localhost:9524/api/roleconfiguration', {
+  const roleResponse = await fetch('/api/roleconfiguration', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 

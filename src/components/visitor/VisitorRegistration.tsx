@@ -1,10 +1,11 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useVisitor } from '../../contexts/VisitorContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useStaff } from '../../contexts/StaffContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserPlus, Phone, Mail, Building, MessageSquare, Calendar, CreditCard, Camera, Check, Upload } from 'lucide-react';
+import { UserPlus, Phone, Mail, Building, MessageSquare, Calendar, CreditCard, Camera, Check, Upload, AlertCircle } from 'lucide-react';
+import { apiService, type ReturningVisitorData } from '../../services/apiService';
 
 const VisitorRegistration: React.FC = () => {
   const { addVisitor } = useVisitor();
@@ -14,77 +15,129 @@ const VisitorRegistration: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingReturningVisitor, setIsCheckingReturningVisitor] = useState(false);
+  const [returningVisitorInfo, setReturningVisitorInfo] = useState<ReturningVisitorData | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [formData, setFormData] = useState({
-    fullName: '',
     phoneNumber: '',
+    fullName: '',
     email: '',
     companyName: '',
-    purposeOfVisit: '',
     whomToMeet: '',
-    idProofType: '',
+    purposeOfMeeting: '',
+    idProofType: 'aadhar',
     idProofNumber: '',
+    vehicleNumber: '',
+    emergencyContact: '',
+    notes: '',
+    photo: ''
   });
 
-  const activeStaffMembers = getActiveStaffMembers();
-
-  // Determine if camera should be available based on user role
   const isCameraAvailable = () => {
-    // Camera should only be available for reception users
-    // Admin and staff should only have upload option
-    return user?.role === 'reception';
+    return navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
   };
 
-  // Debug log
-  console.log('VisitorRegistration component mounted', {
-    photoEnabled: settings.enabledFields.photo,
-    showCamera,
-    capturedPhoto: !!capturedPhoto,
-    userRole: user?.role,
-    cameraAvailable: isCameraAvailable()
-  });
+  // Repeated customer detection
+  const checkReturningVisitor = async (phoneNumber: string) => {
+    if (!phoneNumber || phoneNumber.length < 10) {
+      setReturningVisitorInfo(null);
+      return;
+    }
+
+    try {
+      setIsCheckingReturningVisitor(true);
+      console.log('📱 Checking for returning visitor with phone:', phoneNumber);
+      
+      const visitorData = await apiService.getVisitorByPhoneNumber(phoneNumber);
+      console.log('📱 API Response:', visitorData);
+      
+      if (visitorData && visitorData.isReturningVisitor) {
+        console.log('📱 Returning visitor found:', visitorData);
+        setReturningVisitorInfo(visitorData);
+        
+        // Pre-fill form data excluding whomToMeet and purposeOfMeeting
+        setFormData(prev => ({
+          ...prev,
+          fullName: visitorData.fullName || '',
+          email: visitorData.email || '',
+          companyName: visitorData.companyName || '',
+          idProofType: visitorData.idProofType || 'aadhar',
+          idProofNumber: visitorData.idProofNumber || ''
+        }));
+      } else {
+        console.log('📱 New visitor - no previous records found');
+        setReturningVisitorInfo(null);
+      }
+    } catch (error) {
+      console.log('📱 Error checking for returning visitor:', error);
+      setReturningVisitorInfo(null);
+    } finally {
+      setIsCheckingReturningVisitor(false);
+    }
+  };
+
+  const handlePhoneNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setFormData(prev => ({ ...prev, phoneNumber: value }));
+    
+    // Check for returning visitor when phone number is complete
+    if (value.length >= 10) {
+      checkReturningVisitor(value);
+    } else {
+      setReturningVisitorInfo(null);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    // Use special handler for phone number
+    if (e.target.name === 'phoneNumber') {
+      handlePhoneNumberChange(e as React.ChangeEvent<HTMLInputElement>);
+      return;
+    }
+    
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
 
   const startCamera = useCallback(async () => {
     try {
-      console.log('Starting camera...');
-      // Enhanced camera constraints for mobile devices
-      const constraints = {
-        video: { 
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          facingMode: 'user', // Front camera for selfies
-          aspectRatio: { ideal: 16/9 }
+      const attempts = [
+        { video: { facingMode: 'user' } },
+        { video: true }
+      ] as MediaStreamConstraints[];
+      let stream: MediaStream | null = null;
+      let lastError: unknown = null;
+      for (const c of attempts) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(c);
+          if (stream) break;
+        } catch (err) {
+          lastError = err;
         }
-      };
-
-      // Try to get high-quality camera first, fallback to basic if needed
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (error) {
-        // Fallback to basic constraints if high-quality fails
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' }
-        });
       }
-      
-      console.log('Camera stream obtained:', stream);
+      if (!stream) {
+        throw lastError instanceof Error ? lastError : new Error('Failed to access camera');
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         setShowCamera(true);
-        console.log('Camera state set to true');
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      if (errorMessage.includes('NotAllowedError') || errorMessage.includes('Permission denied')) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (/NotAllowed/i.test(message) || /Permission/i.test(message)) {
         alert('Camera access denied. Please allow camera permissions and try again.');
-      } else if (errorMessage.includes('NotFoundError')) {
-        alert('No camera found. Please ensure your device has a camera.');
+      } else if (/NotFound/i.test(message)) {
+        alert('No camera found. Please ensure your device has a camera or upload a photo instead.');
       } else {
         alert('Unable to access camera. Please check that no other app is using the camera and try again.');
       }
@@ -121,35 +174,13 @@ const VisitorRegistration: React.FC = () => {
         const photoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
         setCapturedPhoto(photoDataUrl);
         stopCamera();
-        
-        // Provide haptic feedback on mobile devices
-        if ('vibrate' in navigator) {
-          navigator.vibrate(50);
-        }
       }
     }
   }, [stopCamera]);
 
-  const retakePhoto = () => {
-    setCapturedPhoto(null);
-    startCamera();
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file (PNG, JPG, JPEG)');
-        return;
-      }
-
-      // Validate file size (5MB limit)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
-        return;
-      }
-
       const reader = new FileReader();
       reader.onload = (e) => {
         setCapturedPhoto(e.target?.result as string);
@@ -158,535 +189,418 @@ const VisitorRegistration: React.FC = () => {
     }
   };
 
-  const triggerFileUpload = () => {
-    fileInputRef.current?.click();
+  const retakePhoto = () => {
+    setCapturedPhoto(null);
+    startCamera();
   };
 
-  // Handle orientation changes on mobile
-  React.useEffect(() => {
-    const handleOrientationChange = () => {
-      if (showCamera && videoRef.current) {
-        // Small delay to ensure the orientation change is complete
-        setTimeout(() => {
-          if (videoRef.current) {
-            // Force video refresh
-            const stream = videoRef.current.srcObject as MediaStream;
-            if (stream) {
-              videoRef.current.srcObject = null;
-              videoRef.current.srcObject = stream;
-            }
-          }
-        }, 100);
-      }
-    };
+  const removePhoto = () => {
+    setCapturedPhoto(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
-    window.addEventListener('orientationchange', handleOrientationChange);
-    return () => window.removeEventListener('orientationchange', handleOrientationChange);
-  }, [showCamera]);
-
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Create local time instead of UTC
-    const now = new Date();
-    const localISOTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString();
-    
-    const visitorData = {
-      ...formData,
-      locationId: '1', // Default to main office for general registration
-      dateTime: localISOTime,
-      photoUrl: capturedPhoto || '',
-    };
+    // Validation
+    if (!formData.phoneNumber.trim() || !formData.fullName.trim() || !formData.whomToMeet.trim() || !formData.purposeOfMeeting.trim()) {
+      alert('Please fill in all required fields');
+      return;
+    }
 
-    addVisitor(visitorData);
-    setIsSubmitted(true);
+    setIsSubmitting(true);
     
-    // Reset form after 3 seconds
-    setTimeout(() => {
-      setIsSubmitted(false);
-      setCapturedPhoto(null);
-      setFormData({
-        fullName: '',
-        phoneNumber: '',
-        email: '',
-        companyName: '',
-        purposeOfVisit: '',
-        whomToMeet: '',
-        idProofType: '',
-        idProofNumber: '',
+    try {
+      await addVisitor({
+        ...formData,
+        photo: capturedPhoto || formData.photo,
+        location: user?.location || 'Default Location',
+        staffName: user?.name || 'System'
       });
-    }, 3000);
+      
+      setIsSubmitted(true);
+      
+      // Reset form after successful submission
+      setTimeout(() => {
+        setFormData({
+          phoneNumber: '',
+          fullName: '',
+          email: '',
+          companyName: '',
+          whomToMeet: '',
+          purposeOfMeeting: '',
+          idProofType: 'aadhar',
+          idProofNumber: '',
+          vehicleNumber: '',
+          emergencyContact: '',
+          notes: '',
+          photo: ''
+        });
+        setCapturedPhoto(null);
+        setIsSubmitted(false);
+        setReturningVisitorInfo(null);
+      }, 3000);
+    } catch (error) {
+      console.error('Error submitting visitor:', error);
+      alert('Error registering visitor. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-  };
+  const activeStaffMembers = getActiveStaffMembers();
 
-  if (isSubmitted) {
-    return (
-      <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check className="w-8 h-8 text-green-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Successful!</h2>
-          <p className="text-gray-600 mb-4">
-            Your visit has been registered. The staff member will be notified for approval.
-          </p>
-          <div className="bg-blue-50 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              You will receive an email notification once your visit is approved.
-              Please wait at the reception area.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Camera Modal Portal Component
   const CameraModal = () => {
     if (!showCamera) return null;
-    
+
     return createPortal(
-      <div 
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) {
-            stopCamera();
-          }
-        }}
-      >
-        <div 
-          style={{
-            backgroundColor: 'white',
-            borderRadius: '10px',
-            padding: '24px',
-            width: '90%',
-            maxWidth: '600px',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Take Your Photo</h3>
-            <button
-              type="button"
-              onClick={stopCamera}
-              style={{
-                background: 'none',
-                border: 'none',
-                fontSize: '24px',
-                cursor: 'pointer',
-                color: '#666'
-              }}
-            >
-              ×
-            </button>
-          </div>
-          
-          <div style={{ marginBottom: '16px', backgroundColor: 'black', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: '100%', height: '300px', objectFit: 'cover' }}
-            />
-            <canvas ref={canvasRef} style={{ display: 'none' }} />
-            
-            {/* Camera overlay */}
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              pointerEvents: 'none'
-            }}>
-              <div style={{
-                position: 'absolute',
-                top: '16px',
-                left: '16px',
-                right: '16px',
-                bottom: '16px',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '8px'
-              }}></div>
-              <div style={{
-                position: 'absolute',
-                top: '16px',
-                left: '16px',
-                right: '16px'
-              }}>
-                <p style={{
-                  color: 'white',
-                  fontSize: '14px',
-                  textAlign: 'center',
-                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                  borderRadius: '4px',
-                  padding: '8px 16px',
-                  margin: 0
-                }}>
-                  Position your face within the frame
-                </p>
-              </div>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75">
+        <div className="relative w-full max-w-md mx-4">
+          <div className="bg-white rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4">Take Photo</h3>
+            <div className="relative">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="w-full rounded-lg"
+                onLoadedMetadata={() => setVideoReady(true)}
+              />
+              {videoReady && (
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="bg-blue-600 text-white p-3 rounded-full hover:bg-blue-700"
+                  >
+                    <Camera className="w-6 h-6" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopCamera}
+                    className="bg-gray-600 text-white p-3 rounded-full hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-          
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '16px' }}>
-            <button
-              type="button"
-              onClick={capturePhoto}
-              style={{
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                padding: '12px 32px',
-                borderRadius: '24px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <Camera size={20} />
-              Capture Photo
-            </button>
-            <button
-              type="button"
-              onClick={stopCamera}
-              style={{
-                backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '24px',
-                fontSize: '16px',
-                cursor: 'pointer'
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-          
-          <p style={{ fontSize: '12px', color: '#666', textAlign: 'center', margin: 0 }}>
-            Make sure you're in a well-lit area for the best photo quality
-          </p>
         </div>
+        <canvas ref={canvasRef} className="hidden" />
       </div>,
       document.body
     );
   };
 
+  if (isSubmitted) {
+    return (
+      <div className="text-center py-12">
+        <div className="mb-6">
+          <Check className="w-16 h-16 text-green-500 mx-auto" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Registration Successful!</h2>
+        <p className="text-gray-600">The visitor has been registered successfully.</p>
+      </div>
+    );
+  }
+
   return (
-    <>
-      <CameraModal />
+    <div className="max-w-2xl mx-auto p-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <UserPlus className="w-8 h-8 text-blue-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-900">Register New Visitor</h2>
+        </div>
 
-      <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div className="bg-gradient-to-r from-[#2d4170] to-[#3a4f7a] px-8 py-6">
-            <div className="flex items-center">
-              <UserPlus className="w-8 h-8 text-white mr-3" />
-              <div>
-                <h1 className="text-2xl font-bold text-white">Visitor Registration</h1>
-                <p className="text-blue-100 opacity-80">Please fill in your details</p>
-              </div>
-            </div>
-          </div>
-
-        <form onSubmit={handleSubmit} className="p-8 space-y-6">
-          {/* Personal Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Full Name *
-              </label>
-              <input
-                type="text"
-                name="fullName"
-                value={formData.fullName}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="Enter your full name"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Phone className="inline w-4 h-4 mr-1" />
-                Phone Number *
-              </label>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Phone Number - First Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Phone className="w-4 h-4 inline mr-2" />
+              Phone Number *
+            </label>
+            <div className="relative">
               <input
                 type="tel"
                 name="phoneNumber"
                 value={formData.phoneNumber}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="+91 98765 43210"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter phone number"
                 required
               />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {settings.enabledFields.email && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Mail className="inline w-4 h-4 mr-1" />
-                Email Address
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="your.email@example.com"
-              />
-            </div>
-            )}
-
-            {settings.enabledFields.companyName && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Building className="inline w-4 h-4 mr-1" />
-                Company Name
-              </label>
-              <input
-                type="text"
-                name="companyName"
-                value={formData.companyName}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="Your company"
-              />
-            </div>
-            )}
-          </div>
-
-          {/* Visit Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <MessageSquare className="inline w-4 h-4 mr-1" />
-                Purpose of Visit *
-              </label>
-              <select
-                name="purposeOfVisit"
-                value={formData.purposeOfVisit}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                required
-              >
-                <option value="">Select purpose</option>
-                {settings.purposeOfVisitOptions.map(purpose => (
-                  <option key={purpose} value={purpose}>{purpose}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Whom to Meet *
-              </label>
-              <select
-                name="whomToMeet"
-                value={formData.whomToMeet}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                required
-              >
-                <option value="">Select staff member</option>
-                {activeStaffMembers.map(staff => (
-                  <option key={staff.id} value={`${staff.firstName} ${staff.lastName}`}>
-                    {staff.firstName} {staff.lastName} - {staff.designation || 'Staff'}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* ID Proof Information */}
-          {settings.enabledFields.idProof && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <CreditCard className="inline w-4 h-4 mr-1" />
-                ID Proof Type
-              </label>
-              <select
-                name="idProofType"
-                value={formData.idProofType}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-              >
-                <option value="">Select ID type</option>
-                {settings.idTypeOptions.map(idType => (
-                  <option key={idType} value={idType}>{idType}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                ID Number
-              </label>
-              <input
-                type="text"
-                name="idProofNumber"
-                value={formData.idProofNumber}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                placeholder="Enter ID number"
-              />
-            </div>
-          </div>
-          )}
-
-          {/* Photo Upload */}
-          {settings.enabledFields.photo && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Camera className="inline w-4 h-4 mr-1" />
-              Photo {settings.isPhotoMandatory ? '*' : '(Optional)'}
-            </label>
-            
-            <div className="mb-2 text-xs text-blue-600">
-              Debug: Photo enabled = {settings.enabledFields.photo ? 'true' : 'false'}, 
-              showCamera = {showCamera ? 'true' : 'false'}, 
-              capturedPhoto = {capturedPhoto ? 'exists' : 'null'},
-              userRole = {user?.role || 'none'},
-              cameraAvailable = {isCameraAvailable() ? 'true' : 'false'}
-              <br />
-              <button 
-                type="button" 
-                onClick={() => setShowCamera(true)} 
-                style={{ backgroundColor: 'red', color: 'white', padding: '4px 8px', margin: '4px', fontSize: '12px' }}
-              >
-                TEST: Show Camera Modal
-              </button>
-            </div>
-            
-            {!capturedPhoto && !showCamera && (
-              <div className="space-y-4">
-                <div className={`flex gap-4 justify-center items-center ${isCameraAvailable() ? 'flex-col sm:flex-row' : ''}`}>
-                  {/* Camera Button - Only show for reception users */}
-                  {isCameraAvailable() && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Take Photo button clicked!');
-                        startCamera();
-                      }}
-                      className="flex flex-col items-center justify-center w-40 h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition duration-200 bg-gray-50 hover:bg-gray-100"
-                    >
-                      <Camera className="w-8 h-8 text-gray-400 mb-2" />
-                      <span className="text-sm text-gray-600 font-medium">Take Photo</span>
-                      <span className="text-xs text-gray-500 text-center">Use camera</span>
-                    </button>
-                  )}
-                  
-                  {/* Upload Button - Always available */}
-                  <button
-                    type="button"
-                    onClick={triggerFileUpload}
-                    className="flex flex-col items-center justify-center w-40 h-32 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition duration-200 bg-gray-50 hover:bg-gray-100"
-                  >
-                    <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                    <span className="text-sm text-gray-600 font-medium">Upload Photo</span>
-                    <span className="text-xs text-gray-500 text-center">From device</span>
-                  </button>
+              {isCheckingReturningVisitor && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 </div>
-                
-                <p className="text-xs text-gray-500 text-center">
-                  {isCameraAvailable() 
-                    ? "PNG, JPG up to 5MB - Take a photo or upload from device" 
-                    : "PNG, JPG up to 5MB - Upload from device"}
+              )}
+            </div>
+            
+            {/* Returning Visitor Indicator */}
+            {returningVisitorInfo && (
+              <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center">
+                  <AlertCircle className="w-4 h-4 text-green-600 mr-2" />
+                  <span className="text-sm text-green-800 font-medium">
+                    Welcome back! Last visit: {new Date(returningVisitorInfo.lastVisitDate).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-xs text-green-600 mt-1">
+                  Previous details have been pre-filled. Please update "whom to meet" and purpose.
                 </p>
-                
-                {/* Hidden file input */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
               </div>
             )}
+          </div>
 
-            {capturedPhoto && (
+          {/* Full Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Full Name *
+            </label>
+            <input
+              type="text"
+              name="fullName"
+              value={formData.fullName}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter full name"
+              required
+            />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Mail className="w-4 h-4 inline mr-2" />
+              Email
+            </label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter email address"
+            />
+          </div>
+
+          {/* Company Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Building className="w-4 h-4 inline mr-2" />
+              Company Name
+            </label>
+            <input
+              type="text"
+              name="companyName"
+              value={formData.companyName}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter company name"
+            />
+          </div>
+
+          {/* Whom to Meet */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Whom to Meet *
+            </label>
+            <select
+              name="whomToMeet"
+              value={formData.whomToMeet}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            >
+              <option value="">Select staff member</option>
+              {activeStaffMembers.map(staff => (
+                <option key={staff.id} value={staff.name}>
+                  {staff.name} - {staff.department}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Purpose of Meeting */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <MessageSquare className="w-4 h-4 inline mr-2" />
+              Purpose of Meeting *
+            </label>
+            <textarea
+              name="purposeOfMeeting"
+              value={formData.purposeOfMeeting}
+              onChange={handleChange}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter purpose of meeting"
+              required
+            />
+          </div>
+
+          {/* ID Proof Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <CreditCard className="w-4 h-4 inline mr-2" />
+              ID Proof Type
+            </label>
+            <select
+              name="idProofType"
+              value={formData.idProofType}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="aadhar">Aadhar Card</option>
+              <option value="pan">PAN Card</option>
+              <option value="driving_license">Driving License</option>
+              <option value="passport">Passport</option>
+              <option value="voter_id">Voter ID</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* ID Proof Number */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ID Proof Number
+            </label>
+            <input
+              type="text"
+              name="idProofNumber"
+              value={formData.idProofNumber}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter ID proof number"
+            />
+          </div>
+
+          {/* Vehicle Number */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Vehicle Number
+            </label>
+            <input
+              type="text"
+              name="vehicleNumber"
+              value={formData.vehicleNumber}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter vehicle number"
+            />
+          </div>
+
+          {/* Emergency Contact */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Emergency Contact
+            </label>
+            <input
+              type="tel"
+              name="emergencyContact"
+              value={formData.emergencyContact}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter emergency contact number"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Notes
+            </label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleChange}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Additional notes"
+            />
+          </div>
+
+          {/* Photo Section */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Photo
+            </label>
+            {capturedPhoto ? (
               <div className="space-y-4">
-                <div className="relative">
-                  <img
-                    src={capturedPhoto}
-                    alt="Captured visitor photo"
-                    className="w-full h-64 sm:h-80 object-cover rounded-lg border-2 border-green-200 shadow-lg"
-                  />
-                  <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
-                    ✓ Photo captured
-                  </div>
-                </div>
-                <div className="flex space-x-3 justify-center">
+                <img
+                  src={capturedPhoto}
+                  alt="Visitor"
+                  className="w-32 h-32 object-cover rounded-lg border-2 border-gray-300"
+                />
+                <div className="flex space-x-2">
                   <button
                     type="button"
                     onClick={retakePhoto}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition duration-200 flex items-center"
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    <Camera className="w-4 h-4 mr-2" />
                     Retake Photo
                   </button>
+                  <button
+                    type="button"
+                    onClick={removePhoto}
+                    className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Remove Photo
+                  </button>
                 </div>
-                <p className="text-xs text-green-600 text-center">
-                  Photo looks good! You can retake it if needed.
-                </p>
+              </div>
+            ) : (
+              <div className="flex space-x-4">
+                {isCameraAvailable() && (
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Take Photo
+                  </button>
+                )}
+                <label className="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Photo
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
             )}
           </div>
-          )}
 
-          {/* Current Date and Time Display */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="flex items-center">
-              <Calendar className="w-5 h-5 text-gray-500 mr-2" />
-              <span className="text-sm font-medium text-gray-700">Visit Date & Time: </span>
-              <span className="text-sm text-gray-600 ml-2">
-                {new Date().toLocaleString()}
-              </span>
-            </div>
-          </div>
-
+          {/* Submit Button */}
           <button
             type="submit"
-            className="w-full bg-[#EB6E38] hover:bg-[#d85a2a] text-white font-medium py-4 px-6 rounded-lg transition duration-200 flex items-center justify-center"
+            disabled={isSubmitting}
+            className="w-full flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <UserPlus className="w-5 h-5 mr-2" />
-            Register Visit
+            {isSubmitting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Registering...
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-5 h-5 mr-2" />
+                Register Visitor
+              </>
+            )}
           </button>
         </form>
       </div>
+
+      <CameraModal />
     </div>
-    </>
   );
 };
 

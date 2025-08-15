@@ -34,7 +34,7 @@ export const useLocation = () => {
 };
 
 // API configuration
-const API_BASE_URL = 'http://localhost:9524/api';
+const API_BASE_URL = '/api';
 
 // Helper function to get auth token
 const getAuthToken = () => {

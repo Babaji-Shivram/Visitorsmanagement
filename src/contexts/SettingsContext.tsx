@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
+import { apiService } from '../services/apiService';
 
 export interface EmailSettings {
   smtpServer: string;
@@ -49,6 +50,7 @@ interface SettingsContextType {
   updateCustomField: (id: string, updates: Partial<CustomField>) => void;
   removeCustomField: (id: string) => void;
   reorderCustomFields: (fields: CustomField[]) => void;
+  saveAllSettings: (allSettings: any, locationId?: string) => Promise<boolean>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -122,61 +124,59 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [user]);
 
+  // Listen for FormBuilder settings updates to sync the two systems
+  useEffect(() => {
+    const handleFormBuilderUpdate = (event: CustomEvent) => {
+      const { settings: updatedSettings, enabledFields } = event.detail;
+      
+      if (enabledFields) {
+        // Update only the enabledFields from FormBuilder to keep both systems in sync
+        setSettings(prev => ({
+          ...prev,
+          enabledFields: enabledFields,
+          purposeOfVisitOptions: updatedSettings.purposeOfVisitOptions || prev.purposeOfVisitOptions,
+          idTypeOptions: updatedSettings.idTypeOptions || prev.idTypeOptions,
+          isPhotoMandatory: updatedSettings.isPhotoMandatory ?? prev.isPhotoMandatory
+        }));
+      }
+    };
+
+    window.addEventListener('formBuilderSettingsUpdated', handleFormBuilderUpdate as EventListener);
+    return () => window.removeEventListener('formBuilderSettingsUpdated', handleFormBuilderUpdate as EventListener);
+  }, []);
+
   const loadSettingsFromAPI = async () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const locationParam = user?.role === 'admin' ? '' : `?locationId=${user?.locationId || ''}`;
+      // Use apiService to get settings with proper case conversion
+      const locationId = user?.role === 'admin' ? undefined : user?.locationId;
+      const apiSettings = await apiService.getLocationSettings(locationId);
       
-      // Try multiple API ports similar to AuthContext
-      const apiUrls = [
-        'http://localhost:9524',
-        'http://localhost:5000',
-        'http://localhost:5001',
-        'https://localhost:7000',
-        'https://localhost:7001'
-      ];
-
-      for (const baseUrl of apiUrls) {
-        try {
-          const response = await fetch(`${baseUrl}/api/settings${locationParam}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-
-          if (response.ok) {
-            const apiSettings = await response.json();
-            setIsUpdatingFromAPI(true);
-            setSettings({
-              locationId: apiSettings.locationId,
-              locationName: apiSettings.locationName,
-              purposeOfVisitOptions: apiSettings.purposeOfVisitOptions || defaultSettings.purposeOfVisitOptions,
-              idTypeOptions: apiSettings.idTypeOptions || defaultSettings.idTypeOptions,
-              isPhotoMandatory: apiSettings.isPhotoMandatory || false,
-              customFields: apiSettings.customFields || [],
-              enabledFields: apiSettings.enabledFields || defaultSettings.enabledFields
-            });
-            
-            // Reset the flag after a short delay
-            setTimeout(() => setIsUpdatingFromAPI(false), 100);
-            return; // Success, exit the loop
-          }
-        } catch (apiError) {
-          console.log(`Failed to connect to ${baseUrl}:`, apiError);
-          continue; // Try next URL
-        }
+      if (apiSettings) {
+        setIsUpdatingFromAPI(true);
+        setSettings({
+          locationId: apiSettings.locationId,
+          locationName: apiSettings.locationName,
+          purposeOfVisitOptions: apiSettings.purposeOfVisitOptions || defaultSettings.purposeOfVisitOptions,
+          idTypeOptions: apiSettings.idTypeOptions || defaultSettings.idTypeOptions,
+          isPhotoMandatory: apiSettings.isPhotoMandatory || false,
+          customFields: [], // We simplified to remove custom fields, so use empty array
+          enabledFields: apiSettings.enabledFields || defaultSettings.enabledFields
+        });
+        
+        // Reset the flag after a short delay
+        setTimeout(() => setIsUpdatingFromAPI(false), 100);
+      } else {
+        // If API call failed, fall back to defaults
+        console.error('Failed to load settings from API');
+        setSettings({
+          ...defaultSettings,
+          locationId: user?.locationId,
+          locationName: user?.locationName
+        });
       }
-      
-      // If all API attempts failed, fall back to defaults
-      console.error('Failed to load settings from all API endpoints');
-      setSettings({
-        ...defaultSettings,
-        locationId: user?.locationId,
-        locationName: user?.locationName
-      });
     } catch (error) {
       console.error('Error loading settings from API:', error);
       setSettings({
@@ -187,7 +187,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const saveSettingsToAPI = async (newSettings: VisitorFormSettings) => {
+  const saveSettingsToAPI = async (newSettings: VisitorFormSettings, additionalSettings?: any) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -195,69 +195,45 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return false;
       }
 
-      const locationParam = user?.role === 'admin' ? '' : `?locationId=${user?.locationId || ''}`;
+      // Use apiService to save settings with proper case conversion
+      const locationId = user?.role === 'admin' ? undefined : user?.locationId;
       
-      // Try multiple API ports similar to loadSettingsFromAPI
-      const apiUrls = [
-        'http://localhost:9524',
-        'http://localhost:5000',
-        'http://localhost:5001',
-        'https://localhost:7000',
-        'https://localhost:7001'
-      ];
+      // Combine form settings with additional settings (for other tabs)
+      const settingsToSave = {
+        purposeOfVisitOptions: newSettings.purposeOfVisitOptions,
+        idTypeOptions: newSettings.idTypeOptions,
+        isPhotoMandatory: newSettings.isPhotoMandatory,
+        customFields: [],
+        enabledFields: newSettings.enabledFields,
+        ...additionalSettings // Include any additional settings from other tabs
+      };
 
-      for (const baseUrl of apiUrls) {
-        try {
-          console.log(`Attempting to save settings to ${baseUrl}/api/settings${locationParam}`);
-          
-          const response = await fetch(`${baseUrl}/api/settings${locationParam}`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              purposeOfVisitOptions: newSettings.purposeOfVisitOptions,
-              idTypeOptions: newSettings.idTypeOptions,
-              isPhotoMandatory: newSettings.isPhotoMandatory,
-              customFields: newSettings.customFields,
-              enabledFields: newSettings.enabledFields
-            })
-          });
-
-          if (response.ok) {
-            const updatedSettings = await response.json();
-            console.log('Settings saved successfully:', updatedSettings);
-            
-            // Update local settings with the server response to ensure consistency
-            setIsUpdatingFromAPI(true);
-            setSettings(prevSettings => ({
-              ...prevSettings,
-              locationId: updatedSettings.locationId,
-              locationName: updatedSettings.locationName,
-              purposeOfVisitOptions: updatedSettings.purposeOfVisitOptions || prevSettings.purposeOfVisitOptions,
-              idTypeOptions: updatedSettings.idTypeOptions || prevSettings.idTypeOptions,
-              isPhotoMandatory: updatedSettings.isPhotoMandatory,
-              customFields: updatedSettings.customFields || [],
-              enabledFields: updatedSettings.enabledFields || prevSettings.enabledFields
-            }));
-            
-            // Reset the flag after a short delay to allow the state update to complete
-            setTimeout(() => setIsUpdatingFromAPI(false), 100);
-            
-            return true; // Success
-          } else {
-            console.error(`Failed to save settings to ${baseUrl}: ${response.status} ${response.statusText}`);
-            const errorText = await response.text();
-            console.error('Error response:', errorText);
-          }
-        } catch (apiError) {
-          console.log(`Failed to save to ${baseUrl}:`, apiError);
-          continue; // Try next URL
-        }
+      const updatedSettings = await apiService.updateLocationSettings(locationId, settingsToSave);
+      
+      if (updatedSettings) {
+        console.log('Settings saved successfully:', updatedSettings);
+        
+        // Update local settings with the server response to ensure consistency
+        setIsUpdatingFromAPI(true);
+        setSettings(prevSettings => ({
+          ...prevSettings,
+          locationId: updatedSettings.locationId,
+          locationName: updatedSettings.locationName,
+          purposeOfVisitOptions: updatedSettings.purposeOfVisitOptions || prevSettings.purposeOfVisitOptions,
+          idTypeOptions: updatedSettings.idTypeOptions || prevSettings.idTypeOptions,
+          isPhotoMandatory: updatedSettings.isPhotoMandatory,
+          customFields: [], // Simplified - no custom fields
+          enabledFields: updatedSettings.enabledFields || prevSettings.enabledFields
+        }));
+        
+        // Reset the flag after a short delay to allow the state update to complete
+        setTimeout(() => setIsUpdatingFromAPI(false), 100);
+        
+        return true; // Success
+      } else {
+        console.error('Failed to save settings - API returned null');
+        return false;
       }
-      
-      return false; // All attempts failed
     } catch (error) {
       console.error('Error saving settings to API:', error);
       return false;
@@ -290,7 +266,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [settings, user]); // Removed isUpdatingFromAPI from dependencies
 
   const updateSettings = (newSettings: Partial<VisitorFormSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings(prev => {
+      const updated = { ...prev, ...newSettings };
+      return updated;
+    });
   };
 
   const addPurposeOption = (purpose: string) => {
@@ -364,6 +343,31 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
   };
 
+  // Save all settings (including non-form settings) to API
+  const saveAllSettings = async (allSettings: any, locationId?: string): Promise<boolean> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('No token found, cannot save settings to API');
+        return false;
+      }
+
+      const settingsLocationId = locationId ? parseInt(locationId) : (user?.role === 'admin' ? undefined : user?.locationId);
+      const updatedSettings = await apiService.updateLocationSettings(settingsLocationId, allSettings);
+      
+      if (updatedSettings) {
+        console.log('All settings saved successfully:', updatedSettings);
+        return true;
+      } else {
+        console.error('Failed to save settings - API returned null');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error saving all settings to API:', error);
+      return false;
+    }
+  };
+
   return (
     <SettingsContext.Provider value={{
       settings,
@@ -376,6 +380,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updateCustomField,
       removeCustomField,
       reorderCustomFields,
+      saveAllSettings,
     }}>
       {children}
     </SettingsContext.Provider>
