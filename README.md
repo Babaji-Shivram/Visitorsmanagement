@@ -6,15 +6,23 @@ A comprehensive, modern visitor management system built with .NET 8 backend API 
 
 The BABAJI SHIVRAM Visitor Management System is a full-stack application designed for modern organizational visitor management needs. It features real-time visitor tracking, automated email notifications, role-based access control, and multi-location support.
 
+### ✅ Recent Major Updates (August 2025)
+
+- **🔧 Authentication Fix** - Resolved superadmin role mapping issue (now correctly shows as Admin)
+- **🛠️ Route Architecture Update** - Simplified API routes (removed `/api` prefix for direct access)
+- **🧹 Workspace Cleanup** - Removed 200+ redundant files and organized project structure
+- **🔐 ASP.NET Identity Integration** - Enhanced authentication using proper Identity role management
+- **📡 Frontend-Backend Integration** - Fixed 404 errors and improved API connectivity
+
 ### Key Features
 
 - **Complete Visitor Lifecycle Management** - From registration to check-out
 - **Real-time Dashboard** - Live visitor tracking and analytics
 - **Email Integration** - Automated notifications via Office 365
 - **Multi-location Support** - Manage visitors across multiple locations
-- **Role-based Security** - Admin, Staff, and Reception user roles
+- **Role-based Security** - Admin, Staff, and Reception user roles with proper Identity mapping
 - **Modern UI/UX** - Responsive React frontend with Tailwind CSS
-- **RESTful API** - Comprehensive .NET 8 Web API backend
+- **RESTful API** - Comprehensive .NET 8 Web API backend with simplified routing
 
 ## 🏗️ Architecture
 
@@ -62,6 +70,22 @@ The BABAJI SHIVRAM Visitor Management System is a full-stack application designe
 │ • Reception     │    │ • HTML Templates│    │ • Relationships │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
+
+### 🔄 API Route Architecture (Updated August 2025)
+
+**New Simplified Routes:**
+- Authentication: `/auth/login`, `/auth/register`
+- Visitors: `/visitors`, `/visitors/{id}`
+- Staff: `/staff`, `/staff/{id}`
+- Locations: `/locations`, `/locations/{id}`
+- Health Check: `/health`
+
+**Previous Routes (Deprecated):**
+- ~~`/api/auth/login`~~ → Now `/auth/login`
+- ~~`/api/visitors`~~ → Now `/visitors`
+- ~~`/api/staff`~~ → Now `/staff`
+
+> **Note:** All API endpoints now use direct controller routes without the `/api` prefix for simplified frontend integration.
 
 ## 📋 Prerequisites
 
@@ -168,9 +192,27 @@ cd Visitor
 
 ### Frontend API Configuration
 
-The frontend is configured to connect to the API at `http://localhost:5000`. This is set in:
-- `src/services/apiService.ts`
-- Context files in `src/contexts/`
+The frontend is configured to connect to the API at `http://localhost:5000` using the new simplified routes. Key configuration:
+- Base API URL: `http://localhost:5000`
+- Authentication endpoint: `/auth/login` (not `/api/auth/login`)
+- All endpoints use direct controller names without `/api` prefix
+- Configuration files: `src/services/apiService.ts` and context files in `src/contexts/`
+
+### 🔐 Authentication System (Updated August 2025)
+
+**Enhanced Role Management:**
+- Uses ASP.NET Core Identity for proper role management
+- Roles are retrieved via `UserManager.GetRolesAsync()` method
+- Fixed superadmin mapping to display correct "Admin" role
+- JWT tokens include accurate role information
+- Role priority: Admin > Reception > Staff
+
+**Login Flow:**
+1. User submits credentials to `/auth/login`
+2. System validates against ASP.NET Identity
+3. Roles retrieved using Identity UserManager
+4. JWT token generated with correct role claims
+5. Frontend receives role information for UI permissions
 
 ## 🗄️ Database Schema
 
@@ -226,12 +268,20 @@ All emails use professional HTML templates with company branding.
 
 ## 🔐 Security Features
 
-- **JWT Authentication** - Stateless token-based auth
-- **Role-based Authorization** - Fine-grained access control
-- **Password Hashing** - BCrypt with salt
+- **JWT Authentication** - Stateless token-based auth with enhanced role mapping
+- **ASP.NET Core Identity** - Professional user and role management
+- **Role-based Authorization** - Fine-grained access control with proper Identity integration
+- **Password Hashing** - Identity framework secure password hashing
 - **CORS Configuration** - Secure cross-origin requests
 - **Input Validation** - Server-side validation
-- **SQL Injection Prevention** - Parameterized queries
+- **SQL Injection Prevention** - Entity Framework parameterized queries
+- **Route Security** - Simplified route structure with maintained security
+
+### 🔧 Recent Security Improvements
+- Fixed authentication role mapping for superadmin users
+- Enhanced JWT token generation with accurate role claims
+- Improved Identity integration for consistent role management
+- Streamlined API routes while maintaining security standards
 
 ## 🧪 Testing
 
@@ -298,12 +348,24 @@ dotnet ef migrations list
    - Verify CORS configuration
    - Check firewall settings
 
-3. **Email Issues**
+3. **Frontend API Connection Issues (Updated)**
+   - Ensure API endpoints use new route format (without `/api` prefix)
+   - Verify frontend is calling `/auth/login` not `/api/auth/login`
+   - Check browser network tab for 404 errors on API calls
+   - Confirm API base URL is `http://localhost:5000`
+
+4. **Authentication Issues (Fixed)**
+   - ✅ Superadmin role mapping issue resolved
+   - ✅ Users now see correct roles (Admin/Staff/Reception)
+   - ✅ JWT tokens contain accurate role information
+   - If issues persist, verify Identity database seeding
+
+5. **Email Issues**
    - Verify Office 365 credentials
    - Check app password configuration
    - Ensure SMTP settings are correct
 
-4. **Frontend Build Issues**
+6. **Frontend Build Issues**
    - Clear npm cache: `npm cache clean --force`
    - Delete node_modules and reinstall
    - Check Node.js version compatibility
@@ -353,6 +415,14 @@ Comprehensive API documentation is available in `API-Documentation.md` and inclu
 ### Development Team
 - **Email**: gogulan.a@babajishivram.com
 - **System**: BABAJI SHIVRAM Visitor Management System
+- **Repository**: https://github.com/Babaji-Shivram/Visitorsmanagement
+
+### Recent Updates & Fixes (August 2025)
+- ✅ Authentication role mapping fixed
+- ✅ API route structure simplified
+- ✅ Frontend-backend integration improved
+- ✅ Workspace cleaned and organized
+- ✅ All changes pushed to GitHub
 
 ### Documentation
 - **API Documentation**: `/API-Documentation.md`
@@ -365,6 +435,22 @@ This project is proprietary software of BABAJI SHIVRAM. All rights reserved.
 
 ---
 
-*Last Updated: August 5, 2025*  
-*Version: 1.0.0*  
-*System Status: ✅ Fully Operational*
+*Last Updated: August 15, 2025*  
+*Version: 2.0.0*  
+*System Status: ✅ Fully Operational with Recent Major Updates*
+
+### 📋 Change Log
+
+**v2.0.0 (August 15, 2025)**
+- 🔧 Fixed authentication role mapping for superadmin users
+- 🛠️ Updated API route architecture (removed `/api` prefix)
+- 🧹 Major workspace cleanup (removed 200+ redundant files)
+- 🔐 Enhanced ASP.NET Identity integration
+- 📡 Improved frontend-backend connectivity
+- 🚀 All changes synchronized with GitHub repository
+
+**v1.0.0 (August 5, 2025)**
+- 🎉 Initial release with complete visitor management system
+- 📧 Office 365 email integration
+- 👥 Multi-role user management
+- 📊 Real-time dashboard and analytics
