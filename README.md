@@ -113,7 +113,7 @@ cd Visitor
 
 1. **Navigate to API directory**
    ```bash
-   cd VisitorManagement.API
+   cd SimpleAPI
    ```
 
 2. **Restore NuGet packages**
@@ -135,7 +135,11 @@ cd Visitor
    dotnet run
    ```
    
-   The API will be available at `https://localhost:5000`
+   The API will be available at:
+   - **Default**: `http://localhost:5014` (as configured in launchSettings.json)
+   - **Production**: `http://localhost:5000` (when using environment variable `ASPNETCORE_URLS=http://localhost:5000`)
+
+   > **Note**: The frontend is configured to connect to `http://localhost:5014` by default. For production or to match frontend expectations, you can start with: `dotnet run --urls="http://localhost:5000"`
 
 ### 3. Frontend Setup (React App)
 
@@ -159,7 +163,8 @@ cd Visitor
 ### 4. Access the Application
 
 - **Frontend**: http://localhost:5173
-- **API Documentation**: https://localhost:5000/swagger
+- **API Documentation**: http://localhost:5014/swagger (default) or http://localhost:5000/swagger (production)
+- **Health Check**: http://localhost:5014/health (default) or http://localhost:5000/health (production)
 - **Default Admin Login**: admin@company.com / Admin123!
 
 ## 🔧 Configuration
@@ -192,11 +197,21 @@ cd Visitor
 
 ### Frontend API Configuration
 
-The frontend is configured to connect to the API at `http://localhost:5000` using the new simplified routes. Key configuration:
-- Base API URL: `http://localhost:5000`
-- Authentication endpoint: `/auth/login` (not `/api/auth/login`)
-- All endpoints use direct controller names without `/api` prefix
-- Configuration files: `src/services/apiService.ts` and context files in `src/contexts/`
+The frontend is configured to connect to the API with flexible port configuration:
+- **Default API URL**: `http://localhost:5014` (as configured in vite.config.ts)
+- **Production API URL**: `http://localhost:5000` (when API is started with custom port)
+- **Routes**: Direct controller access without `/api` prefix (e.g., `/auth/login`, `/visitors`, `/staff`)
+- **Configuration files**: `vite.config.ts` (proxy configuration) and context files in `src/contexts/`
+
+### 🔧 Port Configuration Guide
+
+**Development Setup (Recommended):**
+1. Start API with: `cd SimpleAPI && dotnet run` → Runs on `http://localhost:5014`
+2. Start Frontend with: `npm run dev` → Runs on `http://localhost:5173` with proxy to 5014
+
+**Production Setup:**
+1. Start API with: `cd SimpleAPI && dotnet run --urls="http://localhost:5000"` → Runs on `http://localhost:5000`
+2. Update frontend proxy target in `vite.config.ts` if needed
 
 ### 🔐 Authentication System (Updated August 2025)
 
@@ -352,7 +367,10 @@ dotnet ef migrations list
    - Ensure API endpoints use new route format (without `/api` prefix)
    - Verify frontend is calling `/auth/login` not `/api/auth/login`
    - Check browser network tab for 404 errors on API calls
-   - Confirm API base URL is `http://localhost:5000`
+   - **Port Configuration**: Confirm API is running on expected port:
+     - Default: `http://localhost:5014` (check vite.config.ts proxy)
+     - Production: `http://localhost:5000` (update proxy if using this)
+   - Test API directly: Visit `http://localhost:5014/health` or `http://localhost:5000/health`
 
 4. **Authentication Issues (Fixed)**
    - ✅ Superadmin role mapping issue resolved
