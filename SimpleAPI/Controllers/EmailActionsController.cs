@@ -311,7 +311,7 @@ namespace SimpleAPI.Controllers
                             </div>
                         </div>
 
-                        <form method='GET' action='/api/email-actions/reject/{visitorId}/{token}'>
+                        <form method='GET' action='/email-actions/reject/{visitorId}/{token}'>
                             <div class='form-group'>
                                 <label for='reason'>Reason for Rejection (Optional):</label>
                                 <textarea name='reason' id='reason' placeholder='Please provide a reason for rejecting this visitor request...'></textarea>
@@ -366,14 +366,15 @@ namespace SimpleAPI.Controllers
 
         private static string GenerateResponsePage(string title, string message, bool isSuccess)
         {
-            var backgroundColor = isSuccess ? "linear-gradient(135deg, #28a745, #20c997)" : "linear-gradient(135deg, #dc3545, #fd7e14)";
+            var backgroundColor = isSuccess ? "linear-gradient(135deg, #10b981, #059669)" : "linear-gradient(135deg, #ef4444, #dc2626)";
             var icon = isSuccess ? "✅" : "❌";
+            var statusColor = isSuccess ? "#10b981" : "#ef4444";
             
             return $@"
             <!DOCTYPE html>
             <html>
             <head>
-                <title>{title}</title>
+                <title>{title} - BABAJI SHIVRAM Visitor Management</title>
                 <meta charset='utf-8'>
                 <meta name='viewport' content='width=device-width, initial-scale=1'>
                 <style>
@@ -391,61 +392,111 @@ namespace SimpleAPI.Controllers
                         max-width: 500px; 
                         background: white; 
                         padding: 40px; 
-                        border-radius: 15px; 
-                        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                        border-radius: 20px; 
+                        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
                         text-align: center;
+                        border-top: 4px solid {statusColor};
                     }}
                     .icon {{ 
                         font-size: 4rem; 
                         margin-bottom: 20px; 
+                        animation: bounce 1s ease-in-out;
+                    }}
+                    @keyframes bounce {{
+                        0%, 20%, 50%, 80%, 100% {{ transform: translateY(0); }}
+                        40% {{ transform: translateY(-10px); }}
+                        60% {{ transform: translateY(-5px); }}
+                    }}
+                    .status-badge {{
+                        display: inline-block;
+                        background: {statusColor};
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        font-size: 0.9rem;
+                        font-weight: bold;
+                        margin-bottom: 20px;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
                     }}
                     h1 {{ 
-                        color: #333; 
+                        color: #1f2937; 
                         margin-bottom: 20px; 
                         font-size: 2rem;
+                        font-weight: 700;
                     }}
                     p {{ 
-                        color: #666; 
+                        color: #6b7280; 
                         font-size: 1.1rem; 
                         line-height: 1.6; 
                         margin-bottom: 30px;
                     }}
                     .btn {{ 
-                        background: linear-gradient(135deg, #007bff, #0056b3); 
+                        background: linear-gradient(135deg, #3b82f6, #1d4ed8); 
                         color: white; 
-                        padding: 12px 30px; 
+                        padding: 14px 32px; 
                         border: none; 
-                        border-radius: 8px; 
+                        border-radius: 12px; 
                         font-size: 16px; 
+                        font-weight: 600;
                         cursor: pointer; 
                         text-decoration: none; 
                         display: inline-block;
                         transition: all 0.3s ease;
+                        margin: 0 8px;
                     }}
                     .btn:hover {{ 
-                        background: linear-gradient(135deg, #0056b3, #004085); 
+                        background: linear-gradient(135deg, #1d4ed8, #1e40af); 
                         transform: translateY(-2px);
-                        box-shadow: 0 5px 15px rgba(0,123,255,0.4);
+                        box-shadow: 0 8px 25px rgba(59,130,246,0.4);
+                    }}
+                    .btn-secondary {{
+                        background: linear-gradient(135deg, #6b7280, #4b5563);
+                    }}
+                    .btn-secondary:hover {{
+                        background: linear-gradient(135deg, #4b5563, #374151);
+                        box-shadow: 0 8px 25px rgba(107,114,128,0.4);
                     }}
                     .timestamp {{ 
-                        color: #999; 
+                        color: #9ca3af; 
                         font-size: 0.9rem; 
                         margin-top: 30px; 
-                        border-top: 1px solid #eee; 
+                        border-top: 1px solid #e5e7eb; 
                         padding-top: 20px;
+                    }}
+                    .logo {{
+                        color: {statusColor};
+                        font-weight: bold;
+                        font-size: 0.9rem;
+                        margin-bottom: 30px;
+                        letter-spacing: 0.5px;
                     }}
                 </style>
             </head>
             <body>
                 <div class='container'>
+                    <div class='logo'>🏢 BABAJI SHIVRAM</div>
                     <div class='icon'>{icon}</div>
+                    <div class='status-badge'>{(isSuccess ? "Success" : "Error")}</div>
                     <h1>{title}</h1>
                     <p>{message}</p>
-                    <a href='javascript:window.close()' class='btn'>🔙 Close Window</a>
+                    <div>
+                        <a href='javascript:window.close()' class='btn'>✨ Close Window</a>
+                        <a href='javascript:history.back()' class='btn btn-secondary'>↩️ Go Back</a>
+                    </div>
                     <div class='timestamp'>
-                        Action completed at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                        📅 Action completed: {DateTime.Now:MMM dd, yyyy 'at' hh:mm tt}
                     </div>
                 </div>
+                
+                <script>
+                    // Auto-close after 5 seconds if user doesn't interact
+                    setTimeout(function() {{
+                        if (confirm('Window will close automatically. Click Cancel to keep it open.')) {{
+                            window.close();
+                        }}
+                    }}, 5000);
+                </script>
             </body>
             </html>";
         }
